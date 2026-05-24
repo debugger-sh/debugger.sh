@@ -3,7 +3,7 @@ name: Bump debugger-sh engine
 on:
   schedule:
     # Every day at 09:00 UTC. Change as needed.
-    - cron: "0 9 * * *"
+    - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
 permissions:

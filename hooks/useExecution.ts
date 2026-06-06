@@ -3,7 +3,7 @@
 import { Engine } from 'debugger-sh';
 import { useCallback, useRef, useState } from 'react';
 
-import { SOURCE_PATH } from '@/components/constants';
+import { LANGS, type Lang } from '@/components/constants';
 import type {
   DapResponse,
   DapVariable,
@@ -25,7 +25,7 @@ export type ExecutionApi = {
   selectedFrameId: number | null;
   scopes: ScopeView[];
   debugLoading: boolean;
-  run: (code: string, breakpoints: ReadonlySet<number>) => Promise<void>;
+  run: (code: string, breakpoints: ReadonlySet<number>, lang: Lang) => Promise<void>;
   stop: () => void;
   resume: () => void;
   stepOver: () => void;
@@ -53,6 +53,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   const ioCleanupRef = useRef<(() => void) | null>(null);
   const stdinDisposeRef = useRef<(() => void) | null>(null);
   const breakpointsRef = useRef<ReadonlySet<number>>(new Set());
+  const langRef = useRef<Lang>('c');
 
   const dapSend = useCallback(<T,>(command: string, args: Record<string, unknown>) => {
     const rt = runtimeRef.current;
@@ -67,9 +68,10 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   }, []);
 
   const sendBreakpoints = useCallback(() => {
+    if (!LANGS[langRef.current].debug) return;
     const lines = Array.from(breakpointsRef.current).sort((a, b) => a - b);
     dapSend('setBreakpoints', {
-      source: { path: SOURCE_PATH },
+      source: { path: LANGS[langRef.current].sourcePath },
       breakpoints: lines.map((line) => ({ line })),
     });
   }, [dapSend]);
@@ -191,9 +193,11 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   );
 
   const run = useCallback(
-    async (code: string, breakpoints: ReadonlySet<number>) => {
+    async (code: string, breakpoints: ReadonlySet<number>, lang: Lang) => {
       if (isRunningRef.current) return;
+      langRef.current = lang;
       breakpointsRef.current = breakpoints;
+      const { fsKey, debug } = LANGS[lang];
       teardown();
       clearDebug();
       setIsRunning(true);
@@ -202,30 +206,34 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       terminalRef.current?.focus();
 
       try {
-        const rt = await Engine.create('c');
+        const rt = await Engine.create(lang);
         runtimeRef.current = rt;
         dapSeqRef.current = 1;
 
         wireStdout(rt);
         wireStdin(rt);
-        rt.fs = { 'main.c': code };
+        rt.fs = { [fsKey]: code };
+        rt.debugger.enabled = debug;
 
-        rt.debugger.on('event', (msg: unknown) => {
-          const m = msg as { type?: string; event?: string };
-          if (m?.type !== 'event') return;
-          if (m.event === 'initialized') {
-            sendBreakpoints();
-            dapSend('setExceptionBreakpoints', { filters: [] });
-            dapSend('configurationDone', {});
-          } else if (m.event === 'stopped') {
-            setIsPaused(true);
-            refreshDebugSession();
-          } else if (m.event === 'terminated') {
-            clearDebug();
-          }
-        });
+        if (debug) {
+          rt.debugger.on('event', (msg: unknown) => {
+            const m = msg as { type?: string; event?: string };
+            if (m?.type !== 'event') return;
+            if (m.event === 'initialized') {
+              sendBreakpoints();
+              dapSend('setExceptionBreakpoints', { filters: [] });
+              dapSend('configurationDone', {});
+            } else if (m.event === 'stopped') {
+              setIsPaused(true);
+              refreshDebugSession();
+            } else if (m.event === 'terminated') {
+              clearDebug();
+            }
+          });
 
-        dapSend('initialize', {});
+          dapSend('initialize', {});
+        }
+
         await rt.run();
       } catch (err) {
         terminalRef.current?.writeln(
@@ -296,7 +304,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   const applyBreakpoints = useCallback(
     (breakpoints: ReadonlySet<number>) => {
       breakpointsRef.current = breakpoints;
-      if (runtimeRef.current) sendBreakpoints();
+      if (runtimeRef.current && LANGS[langRef.current].debug) sendBreakpoints();
     },
     [sendBreakpoints],
   );

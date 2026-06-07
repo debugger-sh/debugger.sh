@@ -9,7 +9,7 @@ import { StateEffect, StateField, type Extension } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 
-import type { Lang } from '@/components/constants';
+import { LANGS, type Lang } from '@/components/constants';
 
 
 // ---------------------------------------------------------------------------
@@ -233,7 +233,7 @@ export type CodeEditorProps = {
 
 export default function CodeEditor(props: CodeEditorProps) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
-  const breakpointsEnabled = props.lang === 'c';
+  const breakpointsEnabled = LANGS[props.lang].debug;
 
   const toggleRef = useRef(props.onToggleBreakpoint);
   toggleRef.current = props.onToggleBreakpoint;

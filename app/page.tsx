@@ -4,6 +4,18 @@ import { useCallback, useRef, useState } from 'react';
 
 import CodeEditor from '@/components/CodeEditor';
 import { LANGS, type Lang } from '@/components/constants';
+
+function initialSources(): Record<Lang, string> {
+  return Object.fromEntries(
+    Object.entries(LANGS).map(([lang, cfg]) => [lang, cfg.defaultCode]),
+  ) as Record<Lang, string>;
+}
+
+function initialBreakpoints(): Record<Lang, Set<number>> {
+  return Object.fromEntries(
+    Object.keys(LANGS).map((lang) => [lang, new Set<number>()]),
+  ) as Record<Lang, Set<number>>;
+}
 import { LanguageSelect } from '@/components/LanguageSelect';
 import ResizableWorkspace from '@/components/ResizableWorkspace';
 import { SourceActions } from '@/components/SourceActions';
@@ -13,14 +25,9 @@ import { useExecution } from '@/hooks/useExecution';
 
 export default function Page() {
   const [lang, setLang] = useState<Lang>('c');
-  const [sources, setSources] = useState<Record<Lang, string>>(() => ({
-    c: LANGS.c.defaultCode,
-    python: LANGS.python.defaultCode,
-  }));
-  const [breakpointsByLang, setBreakpointsByLang] = useState<Record<Lang, Set<number>>>(() => ({
-    c: new Set(),
-    python: new Set(),
-  }));
+  const [sources, setSources] = useState<Record<Lang, string>>(initialSources);
+  const [breakpointsByLang, setBreakpointsByLang] =
+    useState<Record<Lang, Set<number>>>(initialBreakpoints);
   const terminalRef = useRef<TerminalHandle | null>(null);
   const exec = useExecution({ terminalRef });
 

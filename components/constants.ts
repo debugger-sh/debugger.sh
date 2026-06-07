@@ -17,10 +17,14 @@ export const LANGS: Record<Lang, LangConfig> = {
     sourcePath: '/main.c',
     defaultCode: `#include <stdio.h>
 
+int add(int a, int b) {
+  return a + b;
+}
+
 int main(void) {
   int x = 1;
   int y = 2;
-  int z = x + y;
+  int z = add(x, y);
   printf("z=%d\\n", z);
   return 0;
 }
@@ -31,12 +35,15 @@ int main(void) {
     label: 'Python',
     fsKey: 'main.py',
     sourcePath: '/main.py',
-    defaultCode: `x = 1
+    defaultCode: `def add(a, b):
+    return a + b
+
+x = 1
 y = 2
-z = x + y
+z = add(x, y)
 print(f"z={z}")
 `,
-    debug: false,
+    debug: true,
   },
 };
 

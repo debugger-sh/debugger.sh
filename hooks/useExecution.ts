@@ -234,7 +234,12 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
           dapSend('initialize', {});
         }
 
-        await rt.run();
+        const result = await rt.run();
+        if (result.type === 'error') {
+          terminalRef.current?.writeln(
+            `\r\n[ide error] ${result.error.type}: ${result.error.message}`,
+          );
+        }
       } catch (err) {
         terminalRef.current?.writeln(
           `\r\n[ide error] ${err instanceof Error ? err.message : String(err)}`,

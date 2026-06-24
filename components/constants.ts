@@ -31,11 +31,14 @@ int main(void) {
 `,
     debug: true,
   },
-  python: {
+    python: {
     label: 'Python',
     fsKey: 'main.py',
     sourcePath: '/main.py',
-    defaultCode: `def add(a, b):
+    defaultCode: `data = {"users": [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}]}
+items = [10, 20, 30]
+
+def add(a, b):
     return a + b
 
 x = 1

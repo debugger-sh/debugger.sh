@@ -4,10 +4,6 @@ import { Engine } from 'debugger-sh';
 import { useCallback, useRef, useState } from 'react';
 
 import { LANGS, type Lang } from '@/components/constants';
-import {
-  presentPythonStack,
-  presentPythonVariables,
-} from '@/components/debugPresentation';
 import type {
   DapResponse,
   DapVariable,
@@ -92,14 +88,11 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
     (frameId: number) => {
       const scopeRes = dapSend<{ scopes: Scope[] }>('scopes', { frameId });
       const list = scopeRes?.body?.scopes ?? [];
-      const isPython = langRef.current === 'python';
       const views: ScopeView[] = list.map((sc) => {
         const v = dapSend<{ variables: DapVariable[] }>('variables', {
           variablesReference: sc.variablesReference,
         });
-        const raw = v?.body?.variables ?? [];
-        const variables = isPython ? presentPythonVariables(raw) : raw;
-        return { name: sc.name, variables };
+        return { name: sc.name, variables: v?.body?.variables ?? [] };
       });
       setScopes(views);
     },
@@ -111,9 +104,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
     try {
       const res = dapSend<{ stackFrames: StackFrame[] }>('stackTrace', { threadId: 1 });
       if (!res?.success) return;
-      const raw = res.body?.stackFrames ?? [];
-      const fs =
-        langRef.current === 'python' ? presentPythonStack(raw) : raw;
+      const fs = res.body?.stackFrames ?? [];
       setFrames(fs);
       if (fs.length === 0) {
         setSelectedFrameId(null);
@@ -240,6 +231,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
 
         const rt = await Engine.create(lang);
         runtimeRef.current = rt;
+        if (lang === 'python') rt.debugger.filterInternals = true;
         dapSeqRef.current = 1;
 
         wireStdout(rt);
@@ -270,43 +262,27 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
               clearDebug();
             }
           });
-          // See engine/docs/integration.md — initialize before run().
-          dapSend('initialize', {});
         }
 
+        // Match tools/dap/tests/lang/adapters/c-cpp/engine.ts: start run() before
+        // initialize, then complete the handshake once the worker attaches.
         const runPromise = rt.run();
-        const handshakePromise = debug
-          ? (async () => {
-              for (let i = 0; i < 200 && !handshakeDoneRef.current; i++) {
-                if (tryDapHandshake()) return;
-                await new Promise((resolve) => setTimeout(resolve, 50));
-              }
-              if (!handshakeDoneRef.current) {
-                throw new Error(
-                  'DAP handshake timed out — debugger worker never became ready',
-                );
-              }
-            })()
-          : Promise.resolve();
+        if (debug) {
+          dapSend('initialize', {});
+          const handshakeDeadline = Date.now() + 120_000;
+          while (!handshakeDoneRef.current) {
+            if (tryDapHandshake()) break;
+            if (Date.now() >= handshakeDeadline) {
+              throw new Error(
+                'DAP handshake timed out after 120s — worker may be blocked or still ' +
+                  'fetching toolchain WASM. Rebuild the engine with `npm run build` (not tools/dev).',
+              );
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        }
 
-        let timeoutId: ReturnType<typeof window.setTimeout> | undefined;
-        const result = await Promise.race([
-          Promise.all([runPromise, handshakePromise]).then(([runResult]) => runResult),
-          new Promise<never>((_, reject) => {
-            timeoutId = window.setTimeout(
-              () =>
-                reject(
-                  new Error(
-                    'run timed out after 120s — worker may be blocked on the DAP handshake ' +
-                      'or fetching toolchain WASM. Check the browser console and rebuild the ' +
-                      'engine with `npm run build` (not tools/dev).',
-                  ),
-                ),
-              120_000,
-            );
-          }),
-        ]);
-        if (timeoutId !== undefined) window.clearTimeout(timeoutId);
+        const result = await runPromise;
         if (result.type === 'error') {
           terminalRef.current?.writeln(
             `\r\n[ide error] ${result.error.type}: ${result.error.message}`,
@@ -319,7 +295,6 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       } finally {
         teardown();
         setIsRunning(false);
-        // Keep the last pause snapshot visible after run; cleared on the next run.
       }
     },
     [
@@ -327,7 +302,6 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       completeDapHandshake,
       dapSend,
       scheduleDebugRefresh,
-      sendBreakpoints,
       teardown,
       terminalRef,
       wireStdin,
@@ -382,7 +356,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   const applyBreakpoints = useCallback(
     (breakpoints: ReadonlySet<number>) => {
       breakpointsRef.current = breakpoints;
-      if (runtimeRef.current && breakpointsRef.current.size > 0) sendBreakpoints();
+      if (runtimeRef.current && breakpoints.size > 0) sendBreakpoints();
     },
     [sendBreakpoints],
   );

@@ -4,6 +4,12 @@ import { useCallback, useRef, useState } from 'react';
 
 import CodeEditor from '@/components/CodeEditor';
 import { LANGS, type Lang } from '@/components/constants';
+import { LanguageSelect } from '@/components/LanguageSelect';
+import ResizableWorkspace from '@/components/ResizableWorkspace';
+import { SourceActions } from '@/components/SourceActions';
+import Terminal, { type TerminalHandle } from '@/components/Terminal';
+import { VariablesPanel } from '@/components/VariablesPanel';
+import { useExecution } from '@/hooks/useExecution';
 
 function initialSources(): Record<Lang, string> {
   return Object.fromEntries(
@@ -16,12 +22,6 @@ function initialBreakpoints(): Record<Lang, Set<number>> {
     Object.keys(LANGS).map((lang) => [lang, new Set<number>()]),
   ) as Record<Lang, Set<number>>;
 }
-import { LanguageSelect } from '@/components/LanguageSelect';
-import ResizableWorkspace from '@/components/ResizableWorkspace';
-import { SourceActions } from '@/components/SourceActions';
-import Terminal, { type TerminalHandle } from '@/components/Terminal';
-import { VariablesPanel } from '@/components/VariablesPanel';
-import { useExecution } from '@/hooks/useExecution';
 
 export default function Page() {
   const [lang, setLang] = useState<Lang>('c');

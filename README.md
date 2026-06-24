@@ -1,6 +1,6 @@
 # debugger.sh
 
-An in-browser C IDE for [`debugger-sh`](https://www.npmjs.com/package/debugger-sh). Editor, breakpoints, step debugging, interactive terminal, call stack, and variable inspector — all client-side.
+An in-browser C and Python IDE for [`debugger-sh`](https://www.npmjs.com/package/debugger-sh). Editor, breakpoints, step debugging, interactive terminal, call stack, and variable inspector — all client-side.
 
 Lives at https://debugger.sh
 
@@ -19,7 +19,7 @@ The Next dev server sets COOP/COEP headers (see [next.config.ts](./next.config.t
 
 ```
 app/page.tsx              wires components + useExecution
-hooks/useExecution.ts     runtime + DAP lifecycle
+hooks/useExecution.ts     runtime + DAP lifecycle; sets filterInternals for Python
 components/
   CodeEditor.tsx          CodeMirror + breakpoint gutter + stopped-line highlight
   Terminal.tsx            xterm.js (stdin + stdout)
@@ -33,6 +33,16 @@ components/
 ```bash
 npm i debugger-sh@latest
 ```
+
+## Debug presentation
+
+Stack and variable filtering is handled by the engine, not duplicated in the IDE:
+
+- **Python stack:** `engine.debugger.filterInternals = true` in `useExecution.ts` hides bridge/Bdb frames. Set to `false` and filter on `presentationHint: "subtle"` for a “show internals” toggle.
+- **Python locals:** dunder names (`__*__`) are stripped in the engine’s DAP adapter.
+- **Frame names:** module scope in `/main.py` is labeled `__main__`; a function named `main` stays `main`.
+
+Details: [engine integration guide — Presentation filtering](https://github.com/debugger-sh/engine/blob/main/docs/integration.md#presentation-filtering-python) (or `../engine/docs/integration.md` when developing locally).
 
 ## Deploy
 

@@ -6,7 +6,7 @@ export type LangConfig = {
   /** DAP `setBreakpoints` path — must match the worker's virtual source path. */
   sourcePath: string;
   defaultCode: string;
-  /** Whether the engine runs with the DAP debugger enabled. */
+  /** Whether this language supports breakpoints / the DAP debugger. */
   debug: boolean;
 };
 

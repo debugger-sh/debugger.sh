@@ -251,21 +251,31 @@ export default function CodeEditor(props: CodeEditorProps) {
     [props.lang, breakpointsEnabled],
   );
 
-  // React → CM sync: re-dispatch whenever the React state changes.
+  // React → CM sync. Include lang/value so we don't apply line state mid-switch.
   useEffect(() => {
-    cmRef.current?.view?.dispatch({
-      effects: setBreakpointsEffect.of(Array.from(props.breakpoints)),
+    const view = cmRef.current?.view;
+    if (!view) return;
+    const maxLine = view.state.doc.lines;
+    const breakpoints = Array.from(props.breakpoints).filter(
+      (ln) => ln >= 1 && ln <= maxLine,
+    );
+    const stoppedLine =
+      props.stoppedLine != null &&
+      props.stoppedLine >= 1 &&
+      props.stoppedLine <= maxLine
+        ? props.stoppedLine
+        : null;
+    view.dispatch({
+      effects: [
+        setBreakpointsEffect.of(breakpoints),
+        setStoppedLineEffect.of(stoppedLine),
+      ],
     });
-  }, [props.breakpoints]);
-
-  useEffect(() => {
-    cmRef.current?.view?.dispatch({
-      effects: setStoppedLineEffect.of(props.stoppedLine),
-    });
-  }, [props.stoppedLine]);
+  }, [props.lang, props.value, props.breakpoints, props.stoppedLine]);
 
   return (
     <CodeMirror
+      key={props.lang}
       ref={cmRef}
       value={props.value}
       onChange={props.onChange}

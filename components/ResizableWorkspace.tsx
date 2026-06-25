@@ -105,9 +105,6 @@ function DockZone({
         minWidth: 0,
         background: '#0d0d0d',
         overflow: 'hidden',
-        outline: isOver ? '2px solid rgba(59, 130, 246, 0.65)' : undefined,
-        outlineOffset: -1,
-        transition: 'outline 0.12s ease',
       }}
     >
       <div
@@ -135,6 +132,7 @@ function DockZone({
           userSelect: 'none',
           touchAction: 'none',
           opacity: isDragging ? 0.45 : 1,
+          transition: 'opacity 0.18s ease',
         }}
       >
         <span style={{ color: '#555', fontSize: 13, lineHeight: 1, display: 'flex', alignItems: 'center' }} aria-hidden>
@@ -284,7 +282,7 @@ export default function ResizableWorkspace({ panes, paneActions }: ResizableWork
 
       <DragOverlay
         style={{ cursor: 'grabbing' }}
-        dropAnimation={{ duration: 140, easing: 'cubic-bezier(0.25, 0.8, 0.25, 1)' }}
+        dropAnimation={{ duration: 220, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
       >
         {draggedPane ? (
           <div

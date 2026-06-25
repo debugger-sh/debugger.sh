@@ -34,16 +34,28 @@ export function VariableRow({ variable, expand, depth }: VariableRowProps) {
           padding: '2px 4px',
           borderRadius: 2,
           cursor: expandable ? 'pointer' : 'default',
+          minWidth: 0,
         }}
       >
-        <span style={{ width: 10, color: '#666' }}>
+        <span style={{ width: 10, color: '#666', flexShrink: 0 }}>
           {expandable ? (expanded ? '▾' : '▸') : ''}
         </span>
-        <span style={{ color: '#e5e5e5' }}>{variable.name}</span>
+        <span style={{ color: '#e5e5e5', flexShrink: 0 }}>{variable.name}</span>
         {variable.type && (
-          <span style={{ color: '#64748b', fontSize: 10 }}>{variable.type}</span>
+          <span style={{ color: '#64748b', fontSize: 10, flexShrink: 0 }}>{variable.type}</span>
         )}
-        <span style={{ color: '#94a3b8', marginLeft: 'auto', textAlign: 'right' }}>
+        <span
+          title={variable.value}
+          style={{
+            color: '#94a3b8',
+            marginLeft: 'auto',
+            textAlign: 'right',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            minWidth: 0,
+          }}
+        >
           {variable.value}
         </span>
       </div>

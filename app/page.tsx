@@ -93,19 +93,20 @@ export default function Page() {
         }}
         paneActions={{
           editor: (
-            <>
+            <div className="ide-editor-toolbar">
               <LanguageSelect value={lang} onChange={setLang} disabled={exec.isRunning} />
+              <div className="ide-toolbar-divider" aria-hidden />
               <SourceActions
                 isRunning={exec.isRunning}
                 isPaused={exec.isPaused}
                 onRun={() => void exec.run(code, breakpoints, lang)}
-              onStop={exec.stop}
-              onContinue={exec.resume}
-              onStepOver={exec.stepOver}
-              onStepIn={exec.stepIn}
-              onStepOut={exec.stepOut}
+                onStop={exec.stop}
+                onContinue={exec.resume}
+                onStepOver={exec.stepOver}
+                onStepIn={exec.stepIn}
+                onStepOut={exec.stepOut}
               />
-            </>
+            </div>
           ),
         }}
       />

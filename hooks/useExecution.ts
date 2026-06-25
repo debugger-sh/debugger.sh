@@ -267,10 +267,15 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
         // Match tools/dap/tests/lang/adapters/c-cpp/engine.ts: start run() before
         // initialize, then complete the handshake once the worker attaches.
         const runPromise = rt.run();
+        let runSettled = false;
+        void runPromise.finally(() => {
+          runSettled = true;
+        });
+
         if (debug) {
           dapSend('initialize', {});
           const handshakeDeadline = Date.now() + 120_000;
-          while (!handshakeDoneRef.current) {
+          while (!handshakeDoneRef.current && !runSettled) {
             if (tryDapHandshake()) break;
             if (Date.now() >= handshakeDeadline) {
               throw new Error(
@@ -294,6 +299,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
         );
       } finally {
         teardown();
+        clearDebug();
         setIsRunning(false);
       }
     },
@@ -311,7 +317,10 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
 
   const stop = useCallback(() => {
     runtimeRef.current?.stop();
-  }, []);
+    teardown();
+    clearDebug();
+    setIsRunning(false);
+  }, [clearDebug, teardown]);
 
   const resume = useCallback(() => {
     if (!isRunningRef.current) return;

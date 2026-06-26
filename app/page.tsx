@@ -3,30 +3,55 @@
 import { useCallback, useRef, useState } from 'react';
 
 import CodeEditor from '@/components/CodeEditor';
-import { defaultCode } from '@/components/constants';
+import { LANGS, type Lang } from '@/components/constants';
+import { LanguageSelect } from '@/components/LanguageSelect';
 import ResizableWorkspace from '@/components/ResizableWorkspace';
 import { SourceActions } from '@/components/SourceActions';
 import Terminal, { type TerminalHandle } from '@/components/Terminal';
 import { VariablesPanel } from '@/components/VariablesPanel';
 import { useExecution } from '@/hooks/useExecution';
 
+function initialSources(): Record<Lang, string> {
+  return Object.fromEntries(
+    Object.entries(LANGS).map(([lang, cfg]) => [lang, cfg.defaultCode]),
+  ) as Record<Lang, string>;
+}
+
+function initialBreakpoints(): Record<Lang, Set<number>> {
+  return Object.fromEntries(
+    Object.keys(LANGS).map((lang) => [lang, new Set<number>()]),
+  ) as Record<Lang, Set<number>>;
+}
+
 export default function Page() {
-  const [code, setCode] = useState<string>(defaultCode);
-  const [breakpoints, setBreakpoints] = useState<Set<number>>(() => new Set());
+  const [lang, setLang] = useState<Lang>('c');
+  const [sources, setSources] = useState<Record<Lang, string>>(initialSources);
+  const [breakpointsByLang, setBreakpointsByLang] =
+    useState<Record<Lang, Set<number>>>(initialBreakpoints);
   const terminalRef = useRef<TerminalHandle | null>(null);
   const exec = useExecution({ terminalRef });
 
+  const code = sources[lang];
+  const breakpoints = breakpointsByLang[lang];
+
+  const setCode = useCallback(
+    (next: string) => setSources((prev) => ({ ...prev, [lang]: next })),
+    [lang],
+  );
+
   const toggleBreakpoint = useCallback(
     (line: number) => {
-      setBreakpoints((prev) => {
-        const next = new Set(prev);
+      if (!LANGS[lang].debug) return;
+      setBreakpointsByLang((prev) => {
+        const current = prev[lang];
+        const next = new Set(current);
         if (next.has(line)) next.delete(line);
         else next.add(line);
         exec.applyBreakpoints(next);
-        return next;
+        return { ...prev, [lang]: next };
       });
     },
-    [exec],
+    [exec, lang],
   );
 
   return (
@@ -45,6 +70,7 @@ export default function Page() {
         panes={{
           editor: (
             <CodeEditor
+              lang={lang}
               value={code}
               onChange={setCode}
               breakpoints={breakpoints}
@@ -59,22 +85,28 @@ export default function Page() {
               onSelectFrame={exec.selectFrame}
               scopes={exec.scopes}
               expandVariable={exec.expandVariable}
+              isRunning={exec.isRunning}
+              isPaused={exec.isPaused}
             />
           ),
           output: <Terminal ref={terminalRef} />,
         }}
         paneActions={{
           editor: (
-            <SourceActions
-              isRunning={exec.isRunning}
-              isPaused={exec.isPaused}
-              onRun={() => void exec.run(code, breakpoints)}
-              onStop={exec.stop}
-              onContinue={exec.resume}
-              onStepOver={exec.stepOver}
-              onStepIn={exec.stepIn}
-              onStepOut={exec.stepOut}
-            />
+            <div className="ide-editor-toolbar">
+              <LanguageSelect value={lang} onChange={setLang} disabled={exec.isRunning} />
+              <div className="ide-toolbar-divider" aria-hidden />
+              <SourceActions
+                isRunning={exec.isRunning}
+                isPaused={exec.isPaused}
+                onRun={() => void exec.run(code, breakpoints, lang)}
+                onStop={exec.stop}
+                onContinue={exec.resume}
+                onStepOver={exec.stepOver}
+                onStepIn={exec.stepIn}
+                onStepOut={exec.stepOut}
+              />
+            </div>
           ),
         }}
       />

@@ -11,6 +11,8 @@ export type VariablesPanelProps = {
   onSelectFrame: (id: number) => void;
   scopes: ScopeView[];
   expandVariable: (ref: number) => DapVariable[];
+  isRunning: boolean;
+  isPaused: boolean;
 };
 
 export function VariablesPanel(props: VariablesPanelProps) {
@@ -36,6 +38,9 @@ export function VariablesPanel(props: VariablesPanelProps) {
       {props.scopes.length > 0 && <SectionHeader>variables</SectionHeader>}
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 0' }}>
         <Variables scopes={props.scopes} expandVariable={props.expandVariable} />
+        {props.frames.length === 0 && props.scopes.length === 0 && (
+          <EmptyHint isRunning={props.isRunning} isPaused={props.isPaused} />
+        )}
       </div>
     </aside>
   );
@@ -132,5 +137,15 @@ function SectionHeader({ children }: { children: ReactNode }) {
     >
       {children}
     </div>
+  );
+}
+
+function EmptyHint({ isRunning, isPaused }: { isRunning: boolean; isPaused: boolean }) {
+  let text =
+    'Click the gutter to set a breakpoint, then run. Variables appear when execution pauses.';
+  if (isRunning && !isPaused) text = 'Running…';
+  else if (isPaused) text = 'Paused — loading stack and variables…';
+  return (
+    <p style={{ margin: '12px', color: '#666', lineHeight: 1.5, fontSize: 11 }}>{text}</p>
   );
 }

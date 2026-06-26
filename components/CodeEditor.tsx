@@ -3,10 +3,13 @@
 import { useEffect, useMemo, useRef } from 'react';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { cpp } from '@codemirror/lang-cpp';
+import { python } from '@codemirror/lang-python';
 import { Decoration, EditorView, gutter, GutterMarker } from '@codemirror/view';
 import { StateEffect, StateField, type Extension } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
+
+import { LANGS, type Lang } from '@/components/constants';
 
 
 // ---------------------------------------------------------------------------
@@ -92,7 +95,7 @@ const editorChrome = EditorView.theme(
   { dark: true },
 );
 
-const cppSyntax = HighlightStyle.define([
+const codeSyntax = HighlightStyle.define([
   { tag: [t.keyword, t.controlKeyword, t.modifier, t.operatorKeyword], color: theme.syntax.keyword },
   { tag: [t.typeName, t.standard(t.typeName)], color: theme.syntax.type },
   { tag: t.function(t.variableName), color: theme.syntax.fn },
@@ -165,24 +168,31 @@ class LineGutterMarker extends GutterMarker {
 
 // `toggleRef` is a ref so the click handler always sees the freshest callback
 // without having to rebuild the gutter extension on every parent render.
-function makeBreakpointGutter(toggleRef: { current: (line: number) => void }) {
+function makeLineGutter(
+  toggleRef: { current: (line: number) => void },
+  breakpointsEnabled: boolean,
+) {
   return gutter({
     class: 'cm-line-gutter',
     lineMarker: (view, line) => {
       const lineNumber = view.state.doc.lineAt(line.from).number;
-      return new LineGutterMarker(lineNumber, view.state.field(breakpointsField).has(lineNumber));
+      const hasBreakpoint =
+        breakpointsEnabled && view.state.field(breakpointsField).has(lineNumber);
+      return new LineGutterMarker(lineNumber, hasBreakpoint);
     },
     lineMarkerChange: (update) =>
       update.docChanged ||
       update.startState.field(breakpointsField) !== update.state.field(breakpointsField),
     // Spacer sized for up to 4-digit line numbers; gutter grows past this if needed.
     initialSpacer: () => new LineGutterMarker(9999, false),
-    domEventHandlers: {
-      mousedown(view, line) {
-        toggleRef.current(view.state.doc.lineAt(line.from).number);
-        return true;
-      },
-    },
+    domEventHandlers: breakpointsEnabled
+      ? {
+          mousedown(view, line) {
+            toggleRef.current(view.state.doc.lineAt(line.from).number);
+            return true;
+          },
+        }
+      : {},
   });
 }
 
@@ -213,6 +223,7 @@ const stoppedLineHighlight = EditorView.decorations.compute([stoppedLineField], 
 // ---------------------------------------------------------------------------
 
 export type CodeEditorProps = {
+  lang: Lang;
   value: string;
   onChange: (value: string) => void;
   breakpoints: Set<number>;
@@ -222,38 +233,49 @@ export type CodeEditorProps = {
 
 export default function CodeEditor(props: CodeEditorProps) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
+  const breakpointsEnabled = LANGS[props.lang].debug;
 
   const toggleRef = useRef(props.onToggleBreakpoint);
   toggleRef.current = props.onToggleBreakpoint;
 
   const extensions = useMemo<Extension[]>(
     () => [
-      cpp(),
+      props.lang === 'python' ? python() : cpp(),
       breakpointsField,
       stoppedLineField,
       stoppedLineHighlight,
-      makeBreakpointGutter(toggleRef),
-      syntaxHighlighting(cppSyntax),
+      makeLineGutter(toggleRef, breakpointsEnabled),
+      syntaxHighlighting(codeSyntax),
       editorChrome,
     ],
-    [],
+    [props.lang, breakpointsEnabled],
   );
 
-  // React → CM sync: re-dispatch whenever the React state changes.
+  // React → CM sync. Include lang/value so we don't apply line state mid-switch.
   useEffect(() => {
-    cmRef.current?.view?.dispatch({
-      effects: setBreakpointsEffect.of(Array.from(props.breakpoints)),
+    const view = cmRef.current?.view;
+    if (!view) return;
+    const maxLine = view.state.doc.lines;
+    const breakpoints = Array.from(props.breakpoints).filter(
+      (ln) => ln >= 1 && ln <= maxLine,
+    );
+    const stoppedLine =
+      props.stoppedLine != null &&
+      props.stoppedLine >= 1 &&
+      props.stoppedLine <= maxLine
+        ? props.stoppedLine
+        : null;
+    view.dispatch({
+      effects: [
+        setBreakpointsEffect.of(breakpoints),
+        setStoppedLineEffect.of(stoppedLine),
+      ],
     });
-  }, [props.breakpoints]);
-
-  useEffect(() => {
-    cmRef.current?.view?.dispatch({
-      effects: setStoppedLineEffect.of(props.stoppedLine),
-    });
-  }, [props.stoppedLine]);
+  }, [props.lang, props.value, props.breakpoints, props.stoppedLine]);
 
   return (
     <CodeMirror
+      key={props.lang}
       ref={cmRef}
       value={props.value}
       onChange={props.onChange}

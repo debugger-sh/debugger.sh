@@ -146,7 +146,7 @@ function DockZone({
               // Stop drag activation when interacting with actions; the title bar
               // owns dnd-kit's pointerdown listener.
               onPointerDown={(e) => e.stopPropagation()}
-              style={{ display: 'flex', alignItems: 'center', gap: 2, cursor: 'auto' }}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'auto' }}
             >
               {actions}
             </div>

@@ -3,7 +3,7 @@
 import { Engine } from 'debugger-sh';
 import { useCallback, useRef, useState } from 'react';
 
-import { SOURCE_PATH } from '@/components/constants';
+import { LANGS, type Lang } from '@/components/constants';
 import type {
   DapResponse,
   DapVariable,
@@ -25,7 +25,7 @@ export type ExecutionApi = {
   selectedFrameId: number | null;
   scopes: ScopeView[];
   debugLoading: boolean;
-  run: (code: string, breakpoints: ReadonlySet<number>) => Promise<void>;
+  run: (code: string, breakpoints: ReadonlySet<number>, lang: Lang) => Promise<void>;
   stop: () => void;
   resume: () => void;
   stepOver: () => void;
@@ -53,6 +53,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   const ioCleanupRef = useRef<(() => void) | null>(null);
   const stdinDisposeRef = useRef<(() => void) | null>(null);
   const breakpointsRef = useRef<ReadonlySet<number>>(new Set());
+  const langRef = useRef<Lang>('c');
 
   const dapSend = useCallback(<T,>(command: string, args: Record<string, unknown>) => {
     const rt = runtimeRef.current;
@@ -67,12 +68,21 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   }, []);
 
   const sendBreakpoints = useCallback(() => {
+    if (breakpointsRef.current.size === 0) return;
     const lines = Array.from(breakpointsRef.current).sort((a, b) => a - b);
     dapSend('setBreakpoints', {
-      source: { path: SOURCE_PATH },
+      source: { path: LANGS[langRef.current].sourcePath },
       breakpoints: lines.map((line) => ({ line })),
     });
   }, [dapSend]);
+
+  /** Steps 5–8 in the engine DAP lifecycle; returns true once the worker is unblocked. */
+  const completeDapHandshake = useCallback((): boolean => {
+    sendBreakpoints();
+    dapSend('setExceptionBreakpoints', { filters: [] });
+    const res = dapSend('configurationDone', {}) as DapResponse<unknown> | null;
+    return res?.success === true;
+  }, [dapSend, sendBreakpoints]);
 
   const loadFrame = useCallback(
     (frameId: number) => {
@@ -93,7 +103,8 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
     setDebugLoading(true);
     try {
       const res = dapSend<{ stackFrames: StackFrame[] }>('stackTrace', { threadId: 1 });
-      const fs = res?.body?.stackFrames ?? [];
+      if (!res?.success) return;
+      const fs = res.body?.stackFrames ?? [];
       setFrames(fs);
       if (fs.length === 0) {
         setSelectedFrameId(null);
@@ -108,6 +119,12 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       setDebugLoading(false);
     }
   }, [dapSend, loadFrame]);
+
+  const scheduleDebugRefresh = useCallback(() => {
+    const run = () => refreshDebugSession();
+    window.setTimeout(run, 0);
+    window.setTimeout(run, 50);
+  }, [refreshDebugSession]);
 
   const clearDebug = useCallback(() => {
     setIsPaused(false);
@@ -191,8 +208,11 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   );
 
   const run = useCallback(
-    async (code: string, breakpoints: ReadonlySet<number>) => {
+    async (code: string, breakpoints: ReadonlySet<number>, lang: Lang) => {
       if (isRunningRef.current) return;
+      langRef.current = lang;
+      const { fsKey } = LANGS[lang];
+      const debug = breakpoints.size > 0;
       breakpointsRef.current = breakpoints;
       teardown();
       clearDebug();
@@ -202,46 +222,92 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       terminalRef.current?.focus();
 
       try {
-        const rt = await Engine.create('c');
+        if (typeof window !== 'undefined' && !window.crossOriginIsolated) {
+          terminalRef.current?.writeln(
+            '\r\n[ide warning] SharedArrayBuffer is unavailable (crossOriginIsolated=false). ' +
+              'Run via `npm run dev` — not a static export preview.',
+          );
+        }
+
+        const rt = await Engine.create(lang);
         runtimeRef.current = rt;
+        if (lang === 'python') rt.debugger.filterInternals = true;
         dapSeqRef.current = 1;
 
         wireStdout(rt);
         wireStdin(rt);
-        rt.fs = { 'main.c': code };
+        rt.fs = { [fsKey]: code };
+        rt.debugger.enabled = debug;
 
-        rt.debugger.on('event', (msg: unknown) => {
-          const m = msg as { type?: string; event?: string };
-          if (m?.type !== 'event') return;
-          if (m.event === 'initialized') {
-            sendBreakpoints();
-            dapSend('setExceptionBreakpoints', { filters: [] });
-            dapSend('configurationDone', {});
-          } else if (m.event === 'stopped') {
-            setIsPaused(true);
-            refreshDebugSession();
-          } else if (m.event === 'terminated') {
-            clearDebug();
+        const handshakeDoneRef = { current: false };
+        const tryDapHandshake = () => {
+          if (handshakeDoneRef.current) return true;
+          if (completeDapHandshake()) {
+            handshakeDoneRef.current = true;
+            return true;
           }
+          return false;
+        };
+
+        if (debug) {
+          rt.debugger.on('event', (msg: unknown) => {
+            const m = msg as { type?: string; event?: string };
+            if (m?.type !== 'event') return;
+            if (m.event === 'initialized') {
+              tryDapHandshake();
+            } else if (m.event === 'stopped') {
+              setIsPaused(true);
+              scheduleDebugRefresh();
+            } else if (m.event === 'terminated') {
+              clearDebug();
+            }
+          });
+        }
+
+        // Match tools/dap/tests/lang/adapters/c-cpp/engine.ts: start run() before
+        // initialize, then complete the handshake once the worker attaches.
+        const runPromise = rt.run();
+        let runSettled = false;
+        void runPromise.finally(() => {
+          runSettled = true;
         });
 
-        dapSend('initialize', {});
-        await rt.run();
+        if (debug) {
+          dapSend('initialize', {});
+          const handshakeDeadline = Date.now() + 120_000;
+          while (!handshakeDoneRef.current && !runSettled) {
+            if (tryDapHandshake()) break;
+            if (Date.now() >= handshakeDeadline) {
+              throw new Error(
+                'DAP handshake timed out after 120s — worker may be blocked or still ' +
+                  'fetching toolchain WASM. Rebuild the engine with `npm run build` (not tools/dev).',
+              );
+            }
+            await new Promise((resolve) => setTimeout(resolve, 50));
+          }
+        }
+
+        const result = await runPromise;
+        if (result.type === 'error') {
+          terminalRef.current?.writeln(
+            `\r\n[ide error] ${result.error.type}: ${result.error.message}`,
+          );
+        }
       } catch (err) {
         terminalRef.current?.writeln(
           `\r\n[ide error] ${err instanceof Error ? err.message : String(err)}`,
         );
       } finally {
         teardown();
-        setIsRunning(false);
         clearDebug();
+        setIsRunning(false);
       }
     },
     [
       clearDebug,
+      completeDapHandshake,
       dapSend,
-      refreshDebugSession,
-      sendBreakpoints,
+      scheduleDebugRefresh,
       teardown,
       terminalRef,
       wireStdin,
@@ -251,7 +317,10 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
 
   const stop = useCallback(() => {
     runtimeRef.current?.stop();
-  }, []);
+    teardown();
+    clearDebug();
+    setIsRunning(false);
+  }, [clearDebug, teardown]);
 
   const resume = useCallback(() => {
     if (!isRunningRef.current) return;
@@ -296,7 +365,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   const applyBreakpoints = useCallback(
     (breakpoints: ReadonlySet<number>) => {
       breakpointsRef.current = breakpoints;
-      if (runtimeRef.current) sendBreakpoints();
+      if (runtimeRef.current && breakpoints.size > 0) sendBreakpoints();
     },
     [sendBreakpoints],
   );

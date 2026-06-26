@@ -13,52 +13,58 @@ export type SourceActionsProps = {
 
 export function SourceActions(p: SourceActionsProps) {
   return (
-    <>
+    <div className="ide-toolbar">
       {!p.isRunning && (
-        <ActionBtn label="run" onClick={p.onRun} variant="primary">
+        <button type="button" className="ide-run-btn" aria-label="Run" onClick={p.onRun}>
           <PlayIcon />
-        </ActionBtn>
+          Run
+        </button>
       )}
       {p.isPaused && (
-        <>
-          <ActionBtn label="continue" onClick={p.onContinue} variant="primary">
+        <div className="ide-debug-group">
+          <button
+            type="button"
+            className="ide-debug-continue"
+            aria-label="Continue"
+            onClick={p.onContinue}
+          >
             <PlayIcon />
-          </ActionBtn>
-          <ActionBtn label="step over" onClick={p.onStepOver} variant="primary">
+            Continue
+          </button>
+          <ActionBtn label="Step over" onClick={p.onStepOver}>
             <StepOverIcon />
           </ActionBtn>
-          <ActionBtn label="step into" onClick={p.onStepIn} variant="primary">
+          <ActionBtn label="Step into" onClick={p.onStepIn}>
             <StepIntoIcon />
           </ActionBtn>
-          <ActionBtn label="step out" onClick={p.onStepOut} variant="primary">
+          <ActionBtn label="Step out" onClick={p.onStepOut}>
             <StepOutIcon />
           </ActionBtn>
-        </>
+        </div>
       )}
       {p.isRunning && (
-        <ActionBtn label="stop" onClick={p.onStop} variant="danger">
+        <button type="button" className="ide-stop-btn" aria-label="Stop" onClick={p.onStop}>
           <StopIcon />
-        </ActionBtn>
+          Stop
+        </button>
       )}
-    </>
+    </div>
   );
 }
 
 function ActionBtn({
   label,
   onClick,
-  variant,
   children,
 }: {
   label: string;
   onClick: () => void;
-  variant?: 'primary' | 'danger';
   children: React.ReactNode;
 }) {
   return (
     <button
       type="button"
-      className={`ide-action-btn${variant ? ` ide-action-btn--${variant}` : ''}`}
+      className="ide-action-btn ide-action-btn--primary"
       title={label}
       aria-label={label}
       onClick={onClick}
@@ -70,7 +76,7 @@ function ActionBtn({
 
 function PlayIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor" aria-hidden>
+    <svg width="10" height="10" viewBox="0 0 11 11" fill="currentColor" aria-hidden>
       <path d="M3 2 L9 5.5 L3 9 Z" />
     </svg>
   );
@@ -78,7 +84,7 @@ function PlayIcon() {
 
 function StopIcon() {
   return (
-    <svg width="11" height="11" viewBox="0 0 11 11" fill="currentColor" aria-hidden>
+    <svg width="9" height="9" viewBox="0 0 11 11" fill="currentColor" aria-hidden>
       <rect x="2.5" y="2.5" width="6" height="6" />
     </svg>
   );

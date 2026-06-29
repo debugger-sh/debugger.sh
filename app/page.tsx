@@ -1,7 +1,6 @@
 'use client';
 
-import { prefetch } from 'debugger-sh';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 import CodeEditor from '@/components/CodeEditor';
 import { LANGS, type Lang } from '@/components/constants';
@@ -34,10 +33,6 @@ export default function Page() {
 
   const code = sources[lang];
   const breakpoints = breakpointsByLang[lang];
-
-  useEffect(() => {
-    void prefetch(lang);
-  }, [lang]);
 
   const setCode = useCallback(
     (next: string) => setSources((prev) => ({ ...prev, [lang]: next })),

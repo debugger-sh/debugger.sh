@@ -1,17 +1,17 @@
-'use client';
+"use client";
 
-import { Engine } from 'debugger-sh';
-import { useCallback, useRef, useState } from 'react';
+import { Engine } from "debugger-sh";
+import { useCallback, useRef, useState } from "react";
 
-import { LANGS, type Lang } from '@/components/constants';
+import { LANGS, type Lang } from "@/components/constants";
 import type {
   DapResponse,
   DapVariable,
   Scope,
   ScopeView,
   StackFrame,
-} from '@/components/dap-types';
-import type { TerminalHandle } from '@/components/Terminal';
+} from "@/components/dap-types";
+import type { TerminalHandle } from "@/components/Terminal";
 
 export type UseExecutionOptions = {
   terminalRef: React.RefObject<TerminalHandle | null>;
@@ -25,7 +25,11 @@ export type ExecutionApi = {
   selectedFrameId: number | null;
   scopes: ScopeView[];
   debugLoading: boolean;
-  run: (code: string, breakpoints: ReadonlySet<number>, lang: Lang) => Promise<void>;
+  run: (
+    code: string,
+    breakpoints: ReadonlySet<number>,
+    lang: Lang
+  ) => Promise<void>;
   stop: () => void;
   resume: () => void;
   stepOver: () => void;
@@ -38,7 +42,9 @@ export type ExecutionApi = {
   applyBreakpoints: (breakpoints: ReadonlySet<number>) => void;
 };
 
-export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi {
+export function useExecution({
+  terminalRef,
+}: UseExecutionOptions): ExecutionApi {
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [stoppedLine, setStoppedLine] = useState<number | null>(null);
@@ -53,24 +59,26 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   const ioCleanupRef = useRef<(() => void) | null>(null);
   const stdinDisposeRef = useRef<(() => void) | null>(null);
   const breakpointsRef = useRef<ReadonlySet<number>>(new Set());
-  const langRef = useRef<Lang>('c');
+  const langRef = useRef<Lang>("c");
 
-  const dapSend = useCallback(<T,>(command: string, args: Record<string, unknown>) => {
-    const rt = runtimeRef.current;
-    if (!rt) return null;
-    const res = rt.debugger.send({
-      type: 'request',
-      seq: dapSeqRef.current++,
-      command,
-      arguments: args,
-    });
-    return res as DapResponse<T> | null;
-  }, []);
+  const dapSend = useCallback(
+    <T>(command: string, args: Record<string, unknown>) => {
+      const rt = runtimeRef.current;
+      if (!rt) return null;
+      const res = rt.debugger.send({
+        type: "request",
+        seq: dapSeqRef.current++,
+        command,
+        arguments: args,
+      });
+      return res as DapResponse<T> | null;
+    },
+    []
+  );
 
   const sendBreakpoints = useCallback(() => {
-    if (breakpointsRef.current.size === 0) return;
     const lines = Array.from(breakpointsRef.current).sort((a, b) => a - b);
-    dapSend('setBreakpoints', {
+    dapSend("setBreakpoints", {
       source: { path: LANGS[langRef.current].sourcePath },
       breakpoints: lines.map((line) => ({ line })),
     });
@@ -79,30 +87,32 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   /** Steps 5–8 in the engine DAP lifecycle; returns true once the worker is unblocked. */
   const completeDapHandshake = useCallback((): boolean => {
     sendBreakpoints();
-    dapSend('setExceptionBreakpoints', { filters: [] });
-    const res = dapSend('configurationDone', {}) as DapResponse<unknown> | null;
+    dapSend("setExceptionBreakpoints", { filters: [] });
+    const res = dapSend("configurationDone", {}) as DapResponse<unknown> | null;
     return res?.success === true;
   }, [dapSend, sendBreakpoints]);
 
   const loadFrame = useCallback(
     (frameId: number) => {
-      const scopeRes = dapSend<{ scopes: Scope[] }>('scopes', { frameId });
+      const scopeRes = dapSend<{ scopes: Scope[] }>("scopes", { frameId });
       const list = scopeRes?.body?.scopes ?? [];
       const views: ScopeView[] = list.map((sc) => {
-        const v = dapSend<{ variables: DapVariable[] }>('variables', {
+        const v = dapSend<{ variables: DapVariable[] }>("variables", {
           variablesReference: sc.variablesReference,
         });
         return { name: sc.name, variables: v?.body?.variables ?? [] };
       });
       setScopes(views);
     },
-    [dapSend],
+    [dapSend]
   );
 
   const refreshDebugSession = useCallback(() => {
     setDebugLoading(true);
     try {
-      const res = dapSend<{ stackFrames: StackFrame[] }>('stackTrace', { threadId: 1 });
+      const res = dapSend<{ stackFrames: StackFrame[] }>("stackTrace", {
+        threadId: 1,
+      });
       if (!res?.success) return;
       const fs = res.body?.stackFrames ?? [];
       setFrames(fs);
@@ -150,16 +160,16 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       if (!term) return;
       const decoder = new TextDecoder();
       const onData = (chunk: Uint8Array) => {
-        term.write(decoder.decode(chunk).replace(/\r?\n/g, '\r\n'));
+        term.write(decoder.decode(chunk).replace(/\r?\n/g, "\r\n"));
       };
-      rt.stdout.on('data', onData);
-      rt.stderr.on('data', onData);
+      rt.stdout.on("data", onData);
+      rt.stderr.on("data", onData);
       ioCleanupRef.current = () => {
-        rt.stdout.off('data', onData);
-        rt.stderr.off('data', onData);
+        rt.stdout.off("data", onData);
+        rt.stderr.off("data", onData);
       };
     },
-    [terminalRef],
+    [terminalRef]
   );
 
   const wireStdin = useCallback(
@@ -167,52 +177,52 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       const term = terminalRef.current;
       if (!term) return;
       const encoder = new TextEncoder();
-      let buffer = '';
+      let buffer = "";
       stdinDisposeRef.current = term.onData((data) => {
         if (!isRunningRef.current) return;
-        if (data === '\x03') {
-          term.write('^C\r\n');
+        if (data === "\x03") {
+          term.write("^C\r\n");
           rt.stop();
           return;
         }
-        if (data === '\x04') {
-          term.write('^D\r\n');
-          void rt.stdin.write(encoder.encode('\x04'));
-          buffer = '';
+        if (data === "\x04") {
+          term.write("^D\r\n");
+          void rt.stdin.write(encoder.encode("\x04"));
+          buffer = "";
           return;
         }
-        if (data === '\x0c') {
+        if (data === "\x0c") {
           term.clear();
-          buffer = '';
+          buffer = "";
           return;
         }
-        if (data === '\r') {
-          term.write('\r\n');
+        if (data === "\r") {
+          term.write("\r\n");
           void rt.stdin.write(encoder.encode(`${buffer}\n`));
-          buffer = '';
+          buffer = "";
           return;
         }
-        if (data === '\u007f') {
+        if (data === "\u007f") {
           if (buffer.length > 0) {
             buffer = buffer.slice(0, -1);
-            term.write('\b \b');
+            term.write("\b \b");
           }
           return;
         }
-        if (data.startsWith('\x1b')) return;
+        if (data.startsWith("\x1b")) return;
         buffer += data;
         term.write(data);
       });
     },
-    [terminalRef],
+    [terminalRef]
   );
 
   const run = useCallback(
     async (code: string, breakpoints: ReadonlySet<number>, lang: Lang) => {
       if (isRunningRef.current) return;
+      const started = performance.now();
       langRef.current = lang;
       const { fsKey } = LANGS[lang];
-      const debug = breakpoints.size > 0;
       breakpointsRef.current = breakpoints;
       teardown();
       clearDebug();
@@ -222,22 +232,22 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       terminalRef.current?.focus();
 
       try {
-        if (typeof window !== 'undefined' && !window.crossOriginIsolated) {
+        if (typeof window !== "undefined" && !window.crossOriginIsolated) {
           terminalRef.current?.writeln(
-            '\r\n[ide warning] SharedArrayBuffer is unavailable (crossOriginIsolated=false). ' +
-              'Run via `npm run dev` — not a static export preview.',
+            "\r\n[ide warning] SharedArrayBuffer is unavailable (crossOriginIsolated=false). " +
+              "Run via `npm run dev` — not a static export preview."
           );
         }
 
         const rt = await Engine.create(lang);
         runtimeRef.current = rt;
-        if (lang === 'python') rt.debugger.filterInternals = true;
+        if (lang === "python") rt.debugger.filterInternals = true;
         dapSeqRef.current = 1;
 
         wireStdout(rt);
         wireStdin(rt);
         rt.fs = { [fsKey]: code };
-        rt.debugger.enabled = debug;
+        rt.debugger.enabled = true;
 
         const handshakeDoneRef = { current: false };
         const tryDapHandshake = () => {
@@ -249,20 +259,18 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
           return false;
         };
 
-        if (debug) {
-          rt.debugger.on('event', (msg: unknown) => {
-            const m = msg as { type?: string; event?: string };
-            if (m?.type !== 'event') return;
-            if (m.event === 'initialized') {
-              tryDapHandshake();
-            } else if (m.event === 'stopped') {
-              setIsPaused(true);
-              scheduleDebugRefresh();
-            } else if (m.event === 'terminated') {
-              clearDebug();
-            }
-          });
-        }
+        rt.debugger.on("event", (msg: unknown) => {
+          const m = msg as { type?: string; event?: string };
+          if (m?.type !== "event") return;
+          if (m.event === "initialized") {
+            tryDapHandshake();
+          } else if (m.event === "stopped") {
+            setIsPaused(true);
+            scheduleDebugRefresh();
+          } else if (m.event === "terminated") {
+            clearDebug();
+          }
+        });
 
         // Match tools/dap/tests/lang/adapters/c-cpp/engine.ts: start run() before
         // initialize, then complete the handshake once the worker attaches.
@@ -272,32 +280,32 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
           runSettled = true;
         });
 
-        if (debug) {
-          dapSend('initialize', {});
-          const handshakeDeadline = Date.now() + 120_000;
-          while (!handshakeDoneRef.current && !runSettled) {
-            if (tryDapHandshake()) break;
-            if (Date.now() >= handshakeDeadline) {
-              throw new Error(
-                'DAP handshake timed out after 120s — worker may be blocked or still ' +
-                  'fetching toolchain WASM. Rebuild the engine with `npm run build` (not tools/dev).',
-              );
-            }
-            await new Promise((resolve) => setTimeout(resolve, 50));
+        dapSend("initialize", {});
+        const handshakeDeadline = Date.now() + 120_000;
+        while (!handshakeDoneRef.current && !runSettled) {
+          if (tryDapHandshake()) break;
+          if (Date.now() >= handshakeDeadline) {
+            throw new Error(
+              "DAP handshake timed out after 120s — worker may be blocked or still " +
+                "fetching toolchain WASM. Rebuild the engine with `npm run build` (not tools/dev)."
+            );
           }
+          await new Promise((resolve) => setTimeout(resolve, 50));
         }
 
         const result = await runPromise;
-        if (result.type === 'error') {
+        if (result.type === "error") {
           terminalRef.current?.writeln(
-            `\r\n[ide error] ${result.error.type}: ${result.error.message}`,
+            `\r\n[ide error] ${result.error.type}: ${result.error.message}`
           );
         }
       } catch (err) {
         terminalRef.current?.writeln(
-          `\r\n[ide error] ${err instanceof Error ? err.message : String(err)}`,
+          `\r\n[ide error] ${err instanceof Error ? err.message : String(err)}`
         );
       } finally {
+        const ms = Math.round(performance.now() - started);
+        terminalRef.current?.writeln(`\r\n\x1b[3;90mRan in ${ms}ms\x1b[0m`);
         teardown();
         clearDebug();
         setIsRunning(false);
@@ -312,7 +320,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       terminalRef,
       wireStdin,
       wireStdout,
-    ],
+    ]
   );
 
   const stop = useCallback(() => {
@@ -324,7 +332,7 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
 
   const resume = useCallback(() => {
     if (!isRunningRef.current) return;
-    dapSend('continue', { threadId: 1 });
+    dapSend("continue", { threadId: 1 });
     setIsPaused(false);
     setStoppedLine(null);
     setFrames([]);
@@ -333,14 +341,14 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
   }, [dapSend]);
 
   const step = useCallback(
-    (command: 'next' | 'stepIn' | 'stepOut') => {
+    (command: "next" | "stepIn" | "stepOut") => {
       if (!isRunningRef.current) return;
       setDebugLoading(true);
       setScopes([]);
       setFrames([]);
       dapSend(command, { threadId: 1 });
     },
-    [dapSend],
+    [dapSend]
   );
 
   const selectFrame = useCallback(
@@ -348,26 +356,26 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
       setSelectedFrameId(id);
       loadFrame(id);
     },
-    [loadFrame],
+    [loadFrame]
   );
 
   const expandVariable = useCallback(
     (ref: number): DapVariable[] => {
       if (ref <= 0) return [];
-      const res = dapSend<{ variables: DapVariable[] }>('variables', {
+      const res = dapSend<{ variables: DapVariable[] }>("variables", {
         variablesReference: ref,
       });
       return res?.body?.variables ?? [];
     },
-    [dapSend],
+    [dapSend]
   );
 
   const applyBreakpoints = useCallback(
     (breakpoints: ReadonlySet<number>) => {
       breakpointsRef.current = breakpoints;
-      if (runtimeRef.current && breakpoints.size > 0) sendBreakpoints();
+      if (runtimeRef.current) sendBreakpoints();
     },
-    [sendBreakpoints],
+    [sendBreakpoints]
   );
 
   return {
@@ -381,9 +389,9 @@ export function useExecution({ terminalRef }: UseExecutionOptions): ExecutionApi
     run,
     stop,
     resume,
-    stepOver: () => step('next'),
-    stepIn: () => step('stepIn'),
-    stepOut: () => step('stepOut'),
+    stepOver: () => step("next"),
+    stepIn: () => step("stepIn"),
+    stepOut: () => step("stepOut"),
     selectFrame,
     expandVariable,
     applyBreakpoints,

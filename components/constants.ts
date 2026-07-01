@@ -17,34 +17,18 @@ export const LANGS: Record<Lang, LangConfig> = {
     sourcePath: '/main.c',
     defaultCode: `#include <stdio.h>
 
-int add(int a, int b) {
-  return a + b;
-}
-
 int main(void) {
-  int x = 1;
-  int y = 2;
-  int z = add(x, y);
-  printf("z=%d\\n", z);
+  printf("Hello, world!\\n");
   return 0;
 }
 `,
     debug: true,
   },
-    python: {
+  python: {
     label: 'Python',
     fsKey: 'main.py',
     sourcePath: '/main.py',
-    defaultCode: `data = {"users": [{"id": 1, "name": "alice"}, {"id": 2, "name": "bob"}]}
-items = [10, 20, 30]
-
-def add(a, b):
-    return a + b
-
-x = 1
-y = 2
-z = add(x, y)
-print(f"z={z}")
+    defaultCode: `print("Hello, world!")
 `,
     debug: true,
   },
@@ -52,15 +36,8 @@ print(f"z={z}")
     label: 'Rust',
     fsKey: 'main.rs',
     sourcePath: '/main.rs',
-    defaultCode: `fn add(a: i32, b: i32) -> i32 {
-    a + b
-}
-
-fn main() {
-    let x = 1;
-    let y = 2;
-    let z = add(x, y);
-    println!("z={}", z);
+    defaultCode: `fn main() {
+    println!("Hello, world!");
 }
 `,
     debug: true,

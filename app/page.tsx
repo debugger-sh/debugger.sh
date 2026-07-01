@@ -95,7 +95,6 @@ export default function Page() {
           editor: (
             <div className="ide-editor-toolbar">
               <LanguageSelect value={lang} onChange={setLang} disabled={exec.isRunning} />
-              <div className="ide-toolbar-divider" aria-hidden />
               <SourceActions
                 isRunning={exec.isRunning}
                 isPaused={exec.isPaused}

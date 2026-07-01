@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef } from 'react';
 import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { cpp } from '@codemirror/lang-cpp';
 import { python } from '@codemirror/lang-python';
+import { rust } from '@codemirror/lang-rust';
 import { Decoration, EditorView, gutter, GutterMarker } from '@codemirror/view';
 import { StateEffect, StateField, type Extension } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
@@ -11,6 +12,16 @@ import { tags as t } from '@lezer/highlight';
 
 import { LANGS, type Lang } from '@/components/constants';
 
+
+// ---------------------------------------------------------------------------
+// Language extensions
+// ---------------------------------------------------------------------------
+
+const LANG_EXTENSIONS: Record<Lang, () => Extension> = {
+  c: cpp,
+  python: python,
+  rust: rust,
+};
 
 // ---------------------------------------------------------------------------
 // Theme
@@ -240,7 +251,7 @@ export default function CodeEditor(props: CodeEditorProps) {
 
   const extensions = useMemo<Extension[]>(
     () => [
-      props.lang === 'python' ? python() : cpp(),
+      LANG_EXTENSIONS[props.lang](),
       breakpointsField,
       stoppedLineField,
       stoppedLineHighlight,

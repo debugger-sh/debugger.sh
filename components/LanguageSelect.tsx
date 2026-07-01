@@ -10,23 +10,18 @@ export type LanguageSelectProps = {
 
 export function LanguageSelect({ value, onChange, disabled }: LanguageSelectProps) {
   return (
-    <div className="ide-lang-switch" role="radiogroup" aria-label="Language">
-      {(Object.keys(LANGS) as Lang[]).map((lang) => {
-        const active = value === lang;
-        return (
-          <button
-            key={lang}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            disabled={disabled}
-            className={`ide-lang-switch__btn${active ? ' is-active' : ''}`}
-            onClick={() => onChange(lang)}
-          >
-            {LANGS[lang].label}
-          </button>
-        );
-      })}
-    </div>
+    <select
+      className="ide-lang-select"
+      aria-label="Language"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value as Lang)}
+    >
+      {(Object.keys(LANGS) as Lang[]).map((lang) => (
+        <option key={lang} value={lang}>
+          {LANGS[lang].label}
+        </option>
+      ))}
+    </select>
   );
 }

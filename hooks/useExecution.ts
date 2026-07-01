@@ -239,7 +239,7 @@ export function useExecution({
           );
         }
 
-        const rt = await Engine.create(lang);
+        const rt = await Engine.create(lang as Parameters<typeof Engine.create>[0]);
         runtimeRef.current = rt;
         if (lang === "python") rt.debugger.filterInternals = true;
         dapSeqRef.current = 1;

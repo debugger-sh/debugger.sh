@@ -1,4 +1,4 @@
-export type Lang = 'c' | 'python';
+export type Lang = 'c' | 'python' | 'rust';
 
 export type LangConfig = {
   label: string;
@@ -45,6 +45,23 @@ x = 1
 y = 2
 z = add(x, y)
 print(f"z={z}")
+`,
+    debug: true,
+  },
+  rust: {
+    label: 'Rust',
+    fsKey: 'main.rs',
+    sourcePath: '/main.rs',
+    defaultCode: `fn add(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+fn main() {
+    let x = 1;
+    let y = 2;
+    let z = add(x, y);
+    println!("z={}", z);
+}
 `,
     debug: true,
   },

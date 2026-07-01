@@ -10,7 +10,7 @@
 // root (`/`, `/_next/...`) — no path rewriting needed.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "ide",
+  "name": "debugger-sh",
   "compatibility_date": "2026-05-02",
   "assets": {
     "directory": "./out",

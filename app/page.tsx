@@ -1,16 +1,19 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import CodeEditor from '@/components/CodeEditor';
 import { LANGS, type Lang } from '@/components/constants';
 import { LanguageSelect } from '@/components/LanguageSelect';
 import ResizableWorkspace from '@/components/ResizableWorkspace';
+import { ShareButton } from '@/components/ShareButton';
 import { SourceActions } from '@/components/SourceActions';
 import Terminal, { type TerminalHandle } from '@/components/Terminal';
 import { TestsPanel } from '@/components/TestsPanel';
 import { VariablesPanel } from '@/components/VariablesPanel';
 import { useExecution } from '@/hooks/useExecution';
+import { getShare, isShareId } from '@/lib/share/api';
+import type { WorkspaceState } from '@/lib/share/types';
 
 function initialSources(): Record<Lang, string> {
   return Object.fromEntries(
@@ -24,11 +27,17 @@ function initialBreakpoints(): Record<Lang, Set<number>> {
   ) as Record<Lang, Set<number>>;
 }
 
+function shareIdFromSearch(): string | null {
+  const id = new URLSearchParams(window.location.search).get('s');
+  return id && isShareId(id) ? id : null;
+}
+
 export default function Page() {
   const [lang, setLang] = useState<Lang>('c');
   const [sources, setSources] = useState<Record<Lang, string>>(initialSources);
   const [breakpointsByLang, setBreakpointsByLang] =
     useState<Record<Lang, Set<number>>>(initialBreakpoints);
+  const [shareReady, setShareReady] = useState(false);
   const terminalRef = useRef<TerminalHandle | null>(null);
   // Stable element identity so the xterm instance is not remounted on each IDE render.
   const terminal = useMemo(() => <Terminal ref={terminalRef} />, []);
@@ -57,6 +66,37 @@ export default function Page() {
     [exec, lang],
   );
 
+  const getShareState = useCallback(
+    (): WorkspaceState => ({ lang, code }),
+    [lang, code],
+  );
+
+  useEffect(() => {
+    const shareId = shareIdFromSearch();
+    if (!shareId) {
+      setShareReady(true);
+      return;
+    }
+
+    let cancelled = false;
+    void (async () => {
+      try {
+        const state = await getShare(shareId);
+        if (cancelled || !state) return;
+        setLang(state.lang);
+        setSources((prev) => ({ ...prev, [state.lang]: state.code }));
+      } catch (err) {
+        console.error('failed to load share', err);
+      } finally {
+        if (!cancelled) setShareReady(true);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <main
       style={{
@@ -68,13 +108,16 @@ export default function Page() {
         gap: 10,
       }}
     >
-      <Logo />
+      <div className="ide-topbar">
+        <Logo />
+        <ShareButton getState={getShareState} />
+      </div>
       <ResizableWorkspace
         panes={{
           editor: (
             <CodeEditor
               lang={lang}
-              value={code}
+              value={shareReady ? code : ''}
               onChange={setCode}
               breakpoints={breakpoints}
               onToggleBreakpoint={toggleBreakpoint}

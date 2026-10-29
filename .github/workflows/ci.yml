@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      # Apply all migrations to a fresh local DB — fails the PR if SQL is broken.
+      - name: Start local DB and apply migrations
+        run: supabase db start
+
+      - name: List migrations
+        run: supabase migration list --local

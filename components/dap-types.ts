@@ -29,6 +29,9 @@ export type DapVariable = {
   value: string;
   type?: string;
   variablesReference: number;
+  /** Present when the engine knows indexed child counts (e.g. empty std::vector → 0). */
+  indexedVariables?: number;
+  namedVariables?: number;
 };
 
 export type ScopeView = {

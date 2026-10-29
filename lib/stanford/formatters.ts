@@ -15,11 +15,13 @@ const SET_NAMESPACE = 'stanfordcpplib::collections::';
 
 function templateType(type: string): TemplateType | undefined {
   if (type.length > 8_192) return undefined;
+  // Collapse `>>` / `> >` noise from libc++ demangling so nested templates parse.
   const text = type
     .trim()
     .replace(/^(?:const\s+|volatile\s+)+/u, '')
     .replace(/^::/u, '')
-    .replace(/\s+(?:const|volatile)$/u, '');
+    .replace(/\s+(?:const|volatile)$/u, '')
+    .replace(/\s*>/g, '>');
   const start = text.indexOf('<');
   if (start <= 0) return undefined;
   const name = text.slice(0, start).trim();
@@ -111,18 +113,21 @@ export function presentStanfordVariable(
     const members = expand(variable.variablesReference);
 
     if (adt === 'Map' || adt === 'Set') {
-      let mapVar = variable;
       let mapMembers = members;
       if (adt === 'Set') {
         const backingMap = field(members, '_map');
         if (!backingMap || backingMap.variablesReference <= 0) return null;
-        mapVar = backingMap;
         mapMembers = expand(backingMap.variablesReference);
       }
       const elements = field(mapMembers, '_elements');
-      if (!elements || elements.variablesReference <= 0) {
+      if (!elements) {
         return { summary: summaryFor(adt, undefined), children: members };
       }
+      // Engine omits variablesReference when std::map has zero elements.
+      if (elements.variablesReference <= 0) {
+        return { summary: summaryFor(adt, 0), children: [] };
+      }
+      // Engine std::map formatter already exposes indexed pair children here.
       const entries = expand(elements.variablesReference);
       const children: DapVariable[] = [];
       for (const [index, entry] of entries.entries()) {
@@ -145,9 +150,8 @@ export function presentStanfordVariable(
           children.push({ ...entry, name: `[${index}]` });
         }
       }
-      void mapVar;
       return {
-        summary: summaryFor(adt, parseCount(elements.value) ?? children.length),
+        summary: summaryFor(adt, children.length),
         children,
       };
     }
@@ -165,6 +169,8 @@ export function presentStanfordVariable(
       if (elements && elements.variablesReference > 0) {
         const vectorMembers = expand(elements.variablesReference);
         sequence = field(vectorMembers, '_elements') ?? elements;
+      } else if (elements) {
+        sequence = elements;
       }
     } else if (adt === 'Vector' || adt === 'Deque') {
       sequence = field(members, '_elements');
@@ -173,22 +179,32 @@ export function presentStanfordVariable(
       if (heap && heap.variablesReference > 0) {
         const heapMembers = expand(heap.variablesReference);
         sequence = field(heapMembers, '_elements') ?? heap;
+      } else if (heap) {
+        sequence = heap;
       }
     } else {
-      // Stack / Queue
+      // Stack / Queue — peel through the inner Vector/Deque to its storage.
       const elements = field(members, '_elements');
       if (elements && elements.variablesReference > 0) {
         const inner = expand(elements.variablesReference);
         sequence = field(inner, '_elements') ?? elements;
+      } else if (elements) {
+        sequence = elements;
       }
     }
 
-    if (!sequence || sequence.variablesReference <= 0) {
+    if (!sequence) {
       return { summary: summaryFor(adt, undefined, shape), children: members };
     }
+    // Engine omits variablesReference when the backing std::vector/deque/map is empty.
+    if (sequence.variablesReference <= 0) {
+      return { summary: summaryFor(adt, 0, shape), children: [] };
+    }
 
+    // Engine std::vector/deque formatters expose indexed children on `_elements`
+    // (type may be `Vector<T>::ContainerType` rather than `std::vector<T>`).
     const elements = expand(sequence.variablesReference);
-    const total = parseCount(sequence.value) ?? elements.length;
+    const total = elements.length;
     const children = elements.map((element, offset) => {
       const index = offset;
       let name =

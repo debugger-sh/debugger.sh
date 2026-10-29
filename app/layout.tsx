@@ -7,7 +7,7 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" style={{ colorScheme: 'dark' }}>
       <body
         style={{
           margin: 0,
@@ -15,6 +15,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
           background: '#0a0a0a',
           color: '#e5e5e5',
+          // Dark track/thumb (Firefox); Blink uses ::-webkit-scrollbar in dock.css.
+          scrollbarColor: '#525252 #0a0a0a',
         }}
       >
         {children}

@@ -414,7 +414,7 @@ function SplitView({
   onOpen: (groupId: string, pane: PaneId) => void;
 }) {
   const orientation = split.dir === 'h' ? 'horizontal' : 'vertical';
-  /* 1px stroke — hover thickens via CSS box-shadow, no gutter padding. */
+  /* 1px stroke — hover thickens via CSS, no gutter padding. */
   const sepStyle = split.dir === 'h' ? { width: 1 } : { height: 1 };
   const childProps = {
     closed,
@@ -433,6 +433,7 @@ function SplitView({
     <Group
       id={split.id}
       orientation={orientation}
+      resizeTargetMinimumSize={{ fine: 10, coarse: 24 }}
       style={{ height: '100%', width: '100%', minHeight: 0, minWidth: 0 }}
     >
       <Panel id={split.children[0].id} minSize="12%" defaultSize={`${split.sizes[0]}%`}>

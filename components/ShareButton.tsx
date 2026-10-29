@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useState } from 'react';
+import { toast } from 'sonner';
 
 import { createShare, shareUrl } from '@/lib/share/api';
 import type { WorkspaceState } from '@/lib/share/types';
@@ -11,6 +12,28 @@ type ShareButtonProps = {
 
 type Status = 'idle' | 'saving' | 'copied' | 'error';
 
+async function copyText(text: string): Promise<boolean> {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    try {
+      const el = document.createElement('textarea');
+      el.value = text;
+      el.setAttribute('readonly', '');
+      el.style.position = 'fixed';
+      el.style.opacity = '0';
+      document.body.appendChild(el);
+      el.select();
+      const ok = document.execCommand('copy');
+      document.body.removeChild(el);
+      return ok;
+    } catch {
+      return false;
+    }
+  }
+}
+
 export function ShareButton({ getState }: ShareButtonProps) {
   const [status, setStatus] = useState<Status>('idle');
 
@@ -20,13 +43,16 @@ export function ShareButton({ getState }: ShareButtonProps) {
     try {
       const id = await createShare(getState());
       const url = shareUrl(id);
-      await navigator.clipboard.writeText(url);
+      const copied = await copyText(url);
+      if (!copied) throw new Error('clipboard unavailable');
       setStatus('copied');
-      window.setTimeout(() => setStatus('idle'), 2000);
+      toast.success('Link copied');
+      window.setTimeout(() => setStatus('idle'), 1600);
     } catch (err) {
       console.error('share failed', err);
       setStatus('error');
-      window.setTimeout(() => setStatus('idle'), 2500);
+      toast.error('Share failed');
+      window.setTimeout(() => setStatus('idle'), 2000);
     }
   }, [getState, status]);
 
@@ -42,14 +68,24 @@ export function ShareButton({ getState }: ShareButtonProps) {
   return (
     <button
       type="button"
-      className="ide-share-btn"
+      className="ide-icon-btn ide-share-btn"
       aria-label={label}
       title={label}
       disabled={status === 'saving'}
+      data-status={status}
       onClick={() => void onShare()}
     >
-      {status === 'copied' ? <CheckIcon /> : <ShareIcon />}
-      <span>{label}</span>
+      <span className="ide-share-icons" aria-hidden>
+        <span className="ide-share-icon" data-active={status === 'idle' || status === 'error'}>
+          <ShareIcon />
+        </span>
+        <span className="ide-share-icon" data-active={status === 'saving'}>
+          <SpinnerIcon />
+        </span>
+        <span className="ide-share-icon" data-active={status === 'copied'}>
+          <CheckIcon />
+        </span>
+      </span>
     </button>
   );
 }
@@ -65,7 +101,6 @@ function ShareIcon() {
       strokeWidth="1.5"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-hidden
     >
       <circle cx="12" cy="3.5" r="1.75" />
       <circle cx="12" cy="12.5" r="1.75" />
@@ -86,9 +121,29 @@ function CheckIcon() {
       strokeWidth="1.75"
       strokeLinecap="round"
       strokeLinejoin="round"
-      aria-hidden
     >
       <path d="M3.5 8.5 L6.5 11.5 L12.5 4.5" />
+    </svg>
+  );
+}
+
+function SpinnerIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" className="ide-spinner">
+      <circle
+        cx="8"
+        cy="8"
+        r="5.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeOpacity="0.25"
+      />
+      <path
+        d="M8 2.5a5.5 5.5 0 0 1 5.5 5.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
     </svg>
   );
 }

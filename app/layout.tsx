@@ -1,3 +1,5 @@
+import { AppToaster } from '@/components/AppToaster';
+
 export const metadata = {
   title: 'debugger.sh',
   description: 'A barebones in-browser C/C++ IDE powered by debugger-sh',
@@ -16,6 +18,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         }}
       >
         {children}
+        <AppToaster />
       </body>
     </html>
   );

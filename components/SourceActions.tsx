@@ -1,53 +1,65 @@
 'use client';
 
-export type SourceActionsProps = {
+export type RunStopProps = {
   isRunning: boolean;
-  isPaused: boolean;
   onRun: () => void;
   onStop: () => void;
+};
+
+/** Run / Stop for the main (source) dock title bar. */
+export function RunStopButton({ isRunning, onRun, onStop }: RunStopProps) {
+  if (!isRunning) {
+    return (
+      <button type="button" className="ide-run-btn" aria-label="Run" onClick={onRun}>
+        <PlayIcon />
+        Run
+      </button>
+    );
+  }
+  return (
+    <button type="button" className="ide-stop-btn" aria-label="Stop" onClick={onStop}>
+      <StopIcon />
+      Stop
+    </button>
+  );
+}
+
+export type DebugControlsProps = {
   onContinue: () => void;
   onStepOver: () => void;
   onStepIn: () => void;
   onStepOut: () => void;
 };
 
-export function SourceActions(p: SourceActionsProps) {
+/** Continue / step controls — lives inside the variables pane body while paused. */
+export function DebugControls({
+  onContinue,
+  onStepOver,
+  onStepIn,
+  onStepOut,
+}: DebugControlsProps) {
   return (
-    <div className="ide-toolbar">
-      {!p.isRunning && (
-        <button type="button" className="ide-run-btn" aria-label="Run" onClick={p.onRun}>
-          <PlayIcon />
-          Run
-        </button>
-      )}
-      {p.isPaused && (
-        <div className="ide-debug-group">
-          <button
-            type="button"
-            className="ide-debug-continue"
-            aria-label="Continue"
-            onClick={p.onContinue}
-          >
-            <PlayIcon />
-            Continue
-          </button>
-          <ActionBtn label="Step over" onClick={p.onStepOver}>
-            <StepOverIcon />
-          </ActionBtn>
-          <ActionBtn label="Step into" onClick={p.onStepIn}>
-            <StepIntoIcon />
-          </ActionBtn>
-          <ActionBtn label="Step out" onClick={p.onStepOut}>
-            <StepOutIcon />
-          </ActionBtn>
-        </div>
-      )}
-      {p.isRunning && (
-        <button type="button" className="ide-stop-btn" aria-label="Stop" onClick={p.onStop}>
-          <StopIcon />
-          Stop
-        </button>
-      )}
+    <div className="ide-debug-bar" role="toolbar" aria-label="Debug controls">
+      <button
+        type="button"
+        className="ide-debug-continue"
+        aria-label="Continue"
+        onClick={onContinue}
+      >
+        <PlayIcon />
+        Continue
+      </button>
+      <div className="ide-debug-group">
+        <ActionBtn label="Step over" onClick={onStepOver}>
+          <StepOverIcon />
+        </ActionBtn>
+        <ActionBtn label="Step into" onClick={onStepIn}>
+          <StepIntoIcon />
+        </ActionBtn>
+        <ActionBtn label="Step out" onClick={onStepOut}>
+          <StepOutIcon />
+        </ActionBtn>
+      </div>
     </div>
   );
 }

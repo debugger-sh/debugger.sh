@@ -73,58 +73,92 @@
   color: #fff;
 }
 
-/* Editor toolbar: language switch + run / debug controls */
-.ide-editor-toolbar {
-  --ide-control-h: 20px;
+/* Page header controls: language + run/stop + share */
+.ide-main-dock {
+  --ide-control-h: 22px;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
 }
 
-.ide-lang-select {
-  appearance: none;
+.ide-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
-  height: var(--ide-control-h);
-  padding: 0 22px 0 8px;
-  background: #111
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23737373' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
-    no-repeat right 7px center;
+  width: var(--ide-control-h, 22px);
+  height: var(--ide-control-h, 22px);
+  padding: 0;
   border: 1px solid #262626;
   border-radius: 6px;
-  color: #f5f5f5;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  line-height: 1;
+  background: #111;
+  color: #a3a3a3;
   cursor: pointer;
-  transition: border-color 0.12s ease, background-color 0.12s ease;
+  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
 }
 
-.ide-lang-select:hover:not(:disabled) {
+.ide-icon-btn:hover:not(:disabled) {
+  color: #f5f5f5;
+  background: #171717;
   border-color: #404040;
-  background-color: #141414;
 }
 
-.ide-lang-select:disabled {
-  cursor: not-allowed;
+.ide-icon-btn:disabled {
   opacity: 0.45;
+  cursor: not-allowed;
 }
 
-.ide-lang-select:focus-visible {
+.ide-icon-btn:focus-visible {
   outline: 1px solid rgba(99, 102, 241, 0.55);
   outline-offset: 1px;
 }
 
-.ide-lang-select option {
+.ide-lang-menu {
+  position: relative;
+}
+
+.ide-lang-dropdown {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 40;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 112px;
   background: #111;
+  border: 1px solid #262626;
+  border-radius: 8px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.ide-lang-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: #d4d4d4;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.ide-lang-option:hover {
+  background: rgba(255, 255, 255, 0.06);
   color: #f5f5f5;
 }
 
-.ide-toolbar {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+.ide-lang-option[data-selected='true'] {
+  color: #f5f5f5;
 }
 
 .ide-run-btn {
@@ -185,6 +219,20 @@
   outline-offset: 2px;
 }
 
+/* Debug controls sit in the variables pane body (not the dock title). */
+.ide-debug-bar {
+  --ide-control-h: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-bottom: 1px solid #1a1a1a;
+  background: #0d0d0d;
+}
+
 .ide-debug-group {
   display: inline-flex;
   align-items: center;
@@ -218,18 +266,18 @@
 .ide-debug-continue {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 4px;
   box-sizing: border-box;
   height: var(--ide-control-h);
-  padding: 0 6px;
+  padding: 0 8px;
   border: none;
-  border-radius: 3px;
+  border-radius: 5px;
   background: rgba(34, 197, 94, 0.14);
   color: #bbf7d0;
   font: inherit;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
   cursor: pointer;
   transition: background 0.12s ease;
 }
@@ -250,31 +298,7 @@
   justify-content: space-between;
   gap: 12px;
   padding: 0 4px;
-}
-
-.ide-share-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  box-sizing: border-box;
-  height: 22px;
-  padding: 0 8px;
-  border: 1px solid #262626;
-  border-radius: 6px;
-  background: #111;
-  color: #a3a3a3;
-  font: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
-}
-
-.ide-share-btn:hover:not(:disabled) {
-  color: #f5f5f5;
-  background: #171717;
-  border-color: #404040;
+  min-height: 22px;
 }
 
 .ide-share-btn:disabled {
@@ -282,7 +306,54 @@
   cursor: default;
 }
 
-.ide-share-btn:focus-visible {
-  outline: 1px solid rgba(99, 102, 241, 0.6);
-  outline-offset: 1px;
+.ide-share-btn[data-status='copied'] {
+  color: #86efac;
+  border-color: rgba(34, 197, 94, 0.35);
+}
+
+.ide-share-icons {
+  position: relative;
+  display: block;
+  width: 12px;
+  height: 12px;
+}
+
+.ide-share-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transform: scale(0.86);
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  pointer-events: none;
+}
+
+.ide-share-icon[data-active='true'] {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.ide-spinner {
+  animation: ide-spin 0.7s linear infinite;
+}
+
+@keyframes ide-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Sonner toast — keep chrome aligned with ide-icon-btn / dock surfaces */
+.ide-toast[data-sonner-toast] {
+  --normal-bg: #111;
+  --normal-border: #262626;
+  --normal-text: #f5f5f5;
+  --success-bg: #111;
+  --success-border: rgba(34, 197, 94, 0.35);
+  --success-text: #f5f5f5;
+  --error-bg: #111;
+  --error-border: rgba(239, 68, 68, 0.4);
+  --error-text: #f5f5f5;
 }

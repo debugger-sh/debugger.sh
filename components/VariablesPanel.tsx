@@ -3,6 +3,7 @@
 import type { ReactNode } from 'react';
 
 import type { DapVariable, ScopeView, StackFrame } from './dap-types';
+import { DebugControls, type DebugControlsProps } from './SourceActions';
 import { VariableRow } from './VariableRow';
 
 export type VariablesPanelProps = {
@@ -13,6 +14,7 @@ export type VariablesPanelProps = {
   expandVariable: (ref: number) => DapVariable[];
   isRunning: boolean;
   isPaused: boolean;
+  debugControls?: DebugControlsProps;
 };
 
 export function VariablesPanel(props: VariablesPanelProps) {
@@ -27,6 +29,9 @@ export function VariablesPanel(props: VariablesPanelProps) {
         minHeight: 0,
       }}
     >
+      {props.isPaused && props.debugControls && (
+        <DebugControls {...props.debugControls} />
+      )}
       {props.frames.length > 0 && <SectionHeader>call stack</SectionHeader>}
       <div style={{ maxHeight: '38%', overflowY: 'auto', flexShrink: 0 }}>
         <CallStack

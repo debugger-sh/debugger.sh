@@ -7,7 +7,7 @@ import { LANGS, type Lang } from '@/components/constants';
 import { LanguageSelect } from '@/components/LanguageSelect';
 import ResizableWorkspace from '@/components/ResizableWorkspace';
 import { ShareButton } from '@/components/ShareButton';
-import { SourceActions } from '@/components/SourceActions';
+import { RunStopButton } from '@/components/SourceActions';
 import Terminal, { type TerminalHandle } from '@/components/Terminal';
 import { TestsPanel } from '@/components/TestsPanel';
 import { VariablesPanel } from '@/components/VariablesPanel';
@@ -110,7 +110,15 @@ export default function Page() {
     >
       <div className="ide-topbar">
         <Logo />
-        <ShareButton getState={getShareState} />
+        <div className="ide-main-dock">
+          <RunStopButton
+            isRunning={exec.isRunning}
+            onRun={() => void exec.run(code, breakpoints, lang)}
+            onStop={exec.stop}
+          />
+          <LanguageSelect value={lang} onChange={setLang} disabled={exec.isRunning} />
+          <ShareButton getState={getShareState} />
+        </div>
       </div>
       <ResizableWorkspace
         panes={{
@@ -133,27 +141,16 @@ export default function Page() {
               expandVariable={exec.expandVariable}
               isRunning={exec.isRunning}
               isPaused={exec.isPaused}
+              debugControls={{
+                onContinue: exec.resume,
+                onStepOver: exec.stepOver,
+                onStepIn: exec.stepIn,
+                onStepOut: exec.stepOut,
+              }}
             />
           ),
           output: terminal,
           tests: <TestsPanel state={exec.testState} isRunning={exec.isRunning} />,
-        }}
-        paneActions={{
-          editor: (
-            <div className="ide-editor-toolbar">
-              <LanguageSelect value={lang} onChange={setLang} disabled={exec.isRunning} />
-              <SourceActions
-                isRunning={exec.isRunning}
-                isPaused={exec.isPaused}
-                onRun={() => void exec.run(code, breakpoints, lang)}
-                onStop={exec.stop}
-                onContinue={exec.resume}
-                onStepOver={exec.stepOver}
-                onStepIn={exec.stepIn}
-                onStepOut={exec.stepOut}
-              />
-            </div>
-          ),
         }}
       />
     </main>

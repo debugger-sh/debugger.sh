@@ -1,32 +1,294 @@
-/* react-resizable-panels separators */
+/*
+ * Separators are a true 1px stroke (flush with pane edges).
+ * Hover/active thicken via box-shadow so layout doesn’t shift.
+ */
 [data-separator]:not([data-separator="disabled"]) {
+  box-sizing: border-box;
   background: #1a1a1a;
-  transition: background 0.14s ease, box-shadow 0.14s ease;
+  transition: background 0.12s ease, box-shadow 0.12s ease;
 }
 
 [data-separator]:not([data-separator="disabled"]):hover {
-  background: rgba(59, 130, 246, 0.35);
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.12);
+  background: rgba(59, 130, 246, 0.45);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.45), 0 0 12px rgba(59, 130, 246, 0.14);
+  z-index: 4;
 }
 
 [data-separator="active"] {
   background: rgba(59, 130, 246, 0.55) !important;
-  box-shadow: 0 0 16px rgba(59, 130, 246, 0.2);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.55), 0 0 16px rgba(59, 130, 246, 0.2);
+  z-index: 4;
 }
 
-.ide-dock-zone {
+/* ---- Dock root / leaves ---- */
+
+.ide-dock-root {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #1a1a1a;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #080808;
   position: relative;
 }
 
-.ide-dock-zone[data-drop-highlight="true"]::after {
-  content: "";
+.ide-pane-hold {
   position: absolute;
-  inset: 0;
-  z-index: 3;
+  width: 0;
+  height: 0;
+  overflow: hidden;
   pointer-events: none;
-  background: rgba(59, 130, 246, 0.04);
-  box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.72),
-    inset 0 0 28px rgba(59, 130, 246, 0.1);
+}
+
+.ide-dock-leaf {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  background: #0d0d0d;
+  overflow: hidden;
+}
+
+.ide-dock-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ide-dock-pane {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.ide-dock-pane > * {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/*
+ * Tabs — boxy. Continuous horizontal rule under the bar (never bridged).
+ * Active = fill + brighter text only.
+ */
+.ide-tabbar {
+  position: relative;
+  z-index: 6;
+  flex-shrink: 0;
+  display: flex;
+  align-items: stretch;
+  height: 30px;
+  padding: 0;
+  background: #111;
+  border-bottom: 1px solid #1a1a1a;
+  overflow: hidden;
+}
+
+.ide-tabbar[data-drop-over='true'] {
+  background: #152036;
+}
+
+.ide-tabbar-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+.ide-tab-slot {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+}
+
+.ide-tab-insert {
+  flex-shrink: 0;
+  width: 2px;
+  align-self: stretch;
+  margin: 4px 0;
+  border-radius: 1px;
+  background: #60a5fa;
+  box-shadow: 0 0 8px rgba(96, 165, 250, 0.45);
+  pointer-events: none;
+}
+
+.ide-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  box-sizing: border-box;
+  height: 100%;
+  padding: 0 4px 0 10px;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: #8a8a8a;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+  white-space: nowrap;
+}
+
+/* Hairline between tabs. */
+.ide-tab-slot + .ide-tab-slot .ide-tab {
+  box-shadow: inset 1px 0 0 #1a1a1a;
+}
+
+.ide-tab:hover {
+  color: #d4d4d4;
+  background: #181818;
+}
+
+.ide-tab[data-active='true'] {
+  color: #f5f5f5;
+  background: #0d0d0d;
+}
+
+.ide-tab[data-dragging='true'] {
+  opacity: 0.35;
+}
+
+.ide-tab-overlay {
+  height: 30px;
+  padding: 0 10px;
+  cursor: grabbing;
+  background: #0d0d0d;
+  color: #f5f5f5;
+  font-size: 12px;
+  font-weight: 500;
+  opacity: 0.72;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+.ide-tab-label {
+  pointer-events: none;
+}
+
+.ide-tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: #555;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.ide-tab:hover .ide-tab-close,
+.ide-tab[data-active='true'] .ide-tab-close {
+  opacity: 1;
+}
+
+.ide-tab-close:hover {
+  color: #f5f5f5;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ide-tab-add {
+  position: relative;
+  display: flex;
+  align-items: center;
+  align-self: center;
+  padding: 0 4px;
+}
+
+.ide-tab-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #555;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.ide-tab-add-btn:hover {
+  color: #d4d4d4;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.ide-tab-add-menu {
+  position: fixed;
+  z-index: 50;
+  margin: 0;
+  padding: 3px;
+  list-style: none;
+  min-width: 104px;
+  background: #111;
+  border: 1px solid #262626;
+  border-radius: 6px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+}
+
+.ide-tab-add-item {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #a3a3a3;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ide-tab-add-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e5e5;
+}
+
+/* ---- Drop edge / center highlight (single root overlay, pixel box) ---- */
+
+.ide-drop-overlay {
+  position: absolute;
+  z-index: 7;
+  box-sizing: border-box;
+  pointer-events: none;
+  background: rgba(59, 130, 246, 0.1);
+  box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.75);
+  opacity: 0;
+  transition:
+    top 0.2s ease,
+    left 0.2s ease,
+    width 0.2s ease,
+    height 0.2s ease,
+    opacity 0.15s ease;
+}
+
+.ide-drop-overlay[data-visible='true'] {
+  opacity: 1;
 }
 
 .ide-action-btn {

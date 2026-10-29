@@ -139,7 +139,6 @@ export default function Page() {
               onSelectFrame={exec.selectFrame}
               scopes={exec.scopes}
               expandVariable={exec.expandVariable}
-              isRunning={exec.isRunning}
               isPaused={exec.isPaused}
               debugControls={{
                 onContinue: exec.resume,

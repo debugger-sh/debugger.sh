@@ -11,12 +11,11 @@ export function TestsPanel({ state, isRunning }: TestsPanelProps) {
   const tests = state?.tests ?? [];
   const results = state?.results ?? new Map<string, TestResult>();
   const passed = [...results.values()].filter((r) => r.status === 'passed').length;
-  const failed = [...results.values()].filter((r) => r.status === 'failed' || r.status === 'errored').length;
 
-  let status = 'No tests yet';
+  let status = 'Run the code to see which tests are passing';
   if (isRunning && !state?.finished) status = 'Running…';
   else if (state?.terminated) status = state.terminated.message ?? state.terminated.reason;
-  else if (state && tests.length) status = `${passed} passed · ${failed} failed`;
+  else if (state && tests.length) status = `${passed}/${tests.length} passed`;
 
   return (
     <aside
@@ -35,11 +34,6 @@ export function TestsPanel({ state, isRunning }: TestsPanelProps) {
         {status}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
-        {tests.length === 0 && !isRunning && (
-          <div style={{ padding: '12px', color: '#64748b' }}>
-            Use <code>PROVIDED_TEST</code> / <code>STUDENT_TEST</code> in your code.
-          </div>
-        )}
         {tests.map((test) => (
           <TestRow key={test.key} test={test} result={results.get(test.key)} />
         ))}

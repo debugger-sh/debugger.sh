@@ -3,7 +3,7 @@
 import { useCallback, useState } from 'react';
 import { toast } from 'sonner';
 
-import { createShare, shareUrl } from '@/lib/share/api';
+import { createShareAction } from '@/lib/share/actions';
 import type { WorkspaceState } from '@/lib/share/types';
 
 type ShareButtonProps = {
@@ -41,8 +41,8 @@ export function ShareButton({ getState }: ShareButtonProps) {
     if (status === 'saving') return;
     setStatus('saving');
     try {
-      const id = await createShare(getState());
-      const url = shareUrl(id);
+      const id = await createShareAction(getState());
+      const url = `${window.location.origin}/${id}`;
       const copied = await copyText(url);
       if (!copied) throw new Error('clipboard unavailable');
       setStatus('copied');

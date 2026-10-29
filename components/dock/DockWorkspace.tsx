@@ -26,12 +26,19 @@ import {
 import { Group, Panel, Separator } from 'react-resizable-panels';
 
 import '../dock.css';
-import { closeTab, hitEdge, moveToGroup, openInGroup, setActive, splitLeaf } from './ops';
+import {
+  closeTab,
+  hitEdge,
+  moveToGroup,
+  openInGroup,
+  setActive,
+  setSplitSizes,
+  splitLeaf,
+} from './ops';
 import { TabBar, insertIndexAtPointer, toMoveIndex } from './TabBar';
 import {
   PANE_IDS,
   PANE_LABELS,
-  defaultDockState,
   type DockNode,
   type DockState,
   type DropEdge,
@@ -46,6 +53,8 @@ import {
 
 export type DockWorkspaceProps = {
   panes: Record<PaneId, ReactNode>;
+  layout: DockState;
+  onLayoutChange: (layout: DockState) => void;
 };
 
 type DragPane = { pane: PaneId; groupId: string };
@@ -79,8 +88,7 @@ function regionForEdge(
   }
 }
 
-export default function DockWorkspace({ panes }: DockWorkspaceProps) {
-  const [state, setState] = useState<DockState>(defaultDockState);
+export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWorkspaceProps) {
   const [drag, setDrag] = useState<DragPane | null>(null);
   const [hover, setHover] = useState<HoverTarget | null>(null);
   const [hostsVersion, setHostsVersion] = useState(0);
@@ -91,8 +99,10 @@ export default function DockWorkspace({ panes }: DockWorkspaceProps) {
   const activeHosts = useRef(new Map<PaneId, HTMLElement>());
   const [holdEl, setHoldEl] = useState<HTMLDivElement | null>(null);
   const pointerRef = useRef({ x: 0, y: 0 });
-  const stateRef = useRef(state);
-  stateRef.current = state;
+  const stateRef = useRef(layout);
+  stateRef.current = layout;
+  const onLayoutChangeRef = useRef(onLayoutChange);
+  onLayoutChangeRef.current = onLayoutChange;
 
   useEffect(() => {
     if (!drag) return;
@@ -104,11 +114,11 @@ export default function DockWorkspace({ panes }: DockWorkspaceProps) {
   }, [drag]);
 
   const commit = useCallback((next: DockState) => {
-    setState(next);
+    onLayoutChangeRef.current(next);
   }, []);
 
-  const closed = useMemo(() => closedPanes(state), [state]);
-  const visibleCount = visiblePanes(state).size;
+  const closed = useMemo(() => closedPanes(layout), [layout]);
+  const visibleCount = visiblePanes(layout).size;
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
@@ -248,7 +258,7 @@ export default function DockWorkspace({ panes }: DockWorkspaceProps) {
     >
       <div ref={rootRef} className="ide-dock-root">
         <DockNodeView
-          node={state.root}
+          node={layout.root}
           closed={closed}
           visibleCount={visibleCount}
           hover={hover}
@@ -259,6 +269,9 @@ export default function DockWorkspace({ panes }: DockWorkspaceProps) {
           onSelect={(groupId, pane) => commit(setActive(stateRef.current, groupId, pane))}
           onClose={(groupId, pane) => commit(closeTab(stateRef.current, groupId, pane))}
           onOpen={(groupId, pane) => commit(openInGroup(stateRef.current, groupId, pane))}
+          onSplitSizes={(splitId, sizes) =>
+            commit(setSplitSizes(stateRef.current, splitId, sizes))
+          }
         />
         <DropHighlight rootRef={rootRef} leafEls={leafEls} hover={hover} dragging={Boolean(drag)} />
         <div ref={setHoldEl} className="ide-pane-hold" aria-hidden />
@@ -340,6 +353,7 @@ function DockNodeView({
   onSelect,
   onClose,
   onOpen,
+  onSplitSizes,
 }: {
   node: DockNode;
   closed: PaneId[];
@@ -352,6 +366,7 @@ function DockNodeView({
   onSelect: (groupId: string, pane: PaneId) => void;
   onClose: (groupId: string, pane: PaneId) => void;
   onOpen: (groupId: string, pane: PaneId) => void;
+  onSplitSizes: (splitId: string, sizes: [number, number]) => void;
 }) {
   if (isTabGroup(node)) {
     const overThis = hover?.groupId === node.id;
@@ -384,6 +399,7 @@ function DockNodeView({
       onSelect={onSelect}
       onClose={onClose}
       onOpen={onOpen}
+      onSplitSizes={onSplitSizes}
     />
   );
 }
@@ -400,6 +416,7 @@ function SplitView({
   onSelect,
   onClose,
   onOpen,
+  onSplitSizes,
 }: {
   split: SplitNode;
   closed: PaneId[];
@@ -412,9 +429,10 @@ function SplitView({
   onSelect: (groupId: string, pane: PaneId) => void;
   onClose: (groupId: string, pane: PaneId) => void;
   onOpen: (groupId: string, pane: PaneId) => void;
+  onSplitSizes: (splitId: string, sizes: [number, number]) => void;
 }) {
   const orientation = split.dir === 'h' ? 'horizontal' : 'vertical';
-  /* 1px stroke — hover thickens via CSS box-shadow, no gutter padding. */
+  /* 1px stroke — hover thickens via CSS, no gutter padding. */
   const sepStyle = split.dir === 'h' ? { width: 1 } : { height: 1 };
   const childProps = {
     closed,
@@ -427,19 +445,32 @@ function SplitView({
     onSelect,
     onClose,
     onOpen,
+    onSplitSizes,
+  };
+  const defaultLayout = {
+    [split.children[0].id]: split.sizes[0],
+    [split.children[1].id]: split.sizes[1],
   };
 
   return (
     <Group
       id={split.id}
       orientation={orientation}
+      defaultLayout={defaultLayout}
+      resizeTargetMinimumSize={{ fine: 10, coarse: 24 }}
+      onLayoutChanged={(next) => {
+        const a = next[split.children[0].id];
+        const b = next[split.children[1].id];
+        if (a == null || b == null) return;
+        onSplitSizes(split.id, [a, b]);
+      }}
       style={{ height: '100%', width: '100%', minHeight: 0, minWidth: 0 }}
     >
-      <Panel id={split.children[0].id} minSize="12%" defaultSize={`${split.sizes[0]}%`}>
+      <Panel id={split.children[0].id} minSize="12%">
         <DockNodeView node={split.children[0]} {...childProps} />
       </Panel>
       <Separator id={`${split.id}-sep`} style={sepStyle} />
-      <Panel id={split.children[1].id} minSize="12%" defaultSize={`${split.sizes[1]}%`}>
+      <Panel id={split.children[1].id} minSize="12%">
         <DockNodeView node={split.children[1]} {...childProps} />
       </Panel>
     </Group>

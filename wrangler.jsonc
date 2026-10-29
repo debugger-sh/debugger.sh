@@ -1,20 +1,22 @@
-// Cloudflare Workers Static Assets config: tells wrangler to upload the
-// `next build` static export in `out/` and serve it from the edge.
-//
-// Without this file, wrangler's auto-detection would see Next.js in
-// package.json and try the OpenNext SSR migration, which doesn't work for
-// `output: 'export'` static sites.
-//
-// The Worker is wired up via a Custom Domain in the Cloudflare dashboard.
-// Share links use /{id}; SPA not_found_handling serves index.html for those.
+// OpenNext Cloudflare Worker — SSR for share routes, static assets for the rest.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ide",
-  "compatibility_date": "2026-05-02",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-10-29",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   "assets": {
-    "directory": "./out",
-    // Unknown paths (e.g. /Ab3xY9kQ2m share links) serve index.html; the
-    // client reads the share id from window.location.pathname.
-    "not_found_handling": "single-page-application"
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  },
+  "services": [
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "ide"
+    }
+  ],
+  "observability": {
+    "enabled": true
   }
+  // Supabase URL/key: set via `wrangler secret put` (see README). Local: `.dev.vars`.
 }

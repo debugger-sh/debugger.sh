@@ -1,28 +1,19 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next';
+import { initOpenNextCloudflareForDev } from '@opennextjs/cloudflare';
 
 // COOP/COEP are required by debugger-sh to use SharedArrayBuffer for stdin.
-//
-// Production (Cloudflare Workers Static Assets): set via `public/_headers`,
-// which is copied into `out/_headers` and read by the Workers asset server.
-//
-// Local dev (`next dev`): `_headers` is a Cloudflare convention and is NOT
-// honored by the Next dev server, so we also keep the `headers()` config
-// below. It's a no-op for `next build` with `output: 'export'`.
+// Applied via Next headers() for both `next dev` and the OpenNext Worker.
 const nextConfig: NextConfig = {
-  output: "export",
   images: { unoptimized: true },
   // Keep the prebundled debugger-sh dist from being re-compiled oddly by Next.
-  transpilePackages: ["debugger-sh"],
-  async rewrites() {
-    return [{ source: "/:shareId([0-9A-Za-z]{8,16})", destination: "/" }];
-  },
+  transpilePackages: ['debugger-sh'],
   async headers() {
     return [
       {
-        source: "/:path*",
+        source: '/:path*',
         headers: [
-          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
-          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
+          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
+          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
         ],
       },
     ];
@@ -30,3 +21,8 @@ const nextConfig: NextConfig = {
 };
 
 export default nextConfig;
+
+// Only for `next dev` — running this during `next build` / OpenNext breaks page collection.
+if (process.env.NODE_ENV === 'development') {
+  initOpenNextCloudflareForDev();
+}

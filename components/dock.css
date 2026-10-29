@@ -1,23 +1,59 @@
 /*
- * Separators are a true 1px stroke (flush with pane edges).
- * Hover/active thicken via box-shadow so layout doesn’t shift.
+ * Separators: 1px stroke; hover/active grow a centered highlight via
+ * transform so layout doesn’t shift. High z-index so the full strip
+ * (tab bars + pane bodies) paints above dock chrome.
  */
 [data-separator]:not([data-separator="disabled"]) {
+  position: relative;
+  z-index: 2;
   box-sizing: border-box;
   background: #1a1a1a;
-  transition: background 0.12s ease, box-shadow 0.12s ease;
 }
 
-[data-separator]:not([data-separator="disabled"]):hover {
-  background: rgba(59, 130, 246, 0.45);
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.45), 0 0 12px rgba(59, 130, 246, 0.14);
-  z-index: 4;
+[data-separator]:not([data-separator="disabled"])::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(59, 130, 246, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transform-origin: center;
+  transition: opacity 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
 }
 
-[data-separator="active"] {
-  background: rgba(59, 130, 246, 0.55) !important;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.55), 0 0 16px rgba(59, 130, 246, 0.2);
-  z-index: 4;
+/* Vertical bar (left/right split): grow horizontally, full height. */
+[data-separator]:not([data-separator="disabled"])[aria-orientation="vertical"]::before {
+  transform: scaleX(1);
+}
+
+/* Horizontal bar (top/bottom split): grow vertically, full width. */
+[data-separator]:not([data-separator="disabled"])[aria-orientation="horizontal"]::before {
+  transform: scaleY(1);
+}
+
+[data-separator]:not([data-separator="disabled"]):hover,
+[data-separator="active"],
+[data-separator="focus"] {
+  z-index: 50;
+}
+
+[data-separator]:not([data-separator="disabled"]):hover::before,
+[data-separator="active"]::before,
+[data-separator="focus"]::before {
+  opacity: 1;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
+}
+
+[data-separator]:not([data-separator="disabled"])[aria-orientation="vertical"]:hover::before,
+[data-separator="active"][aria-orientation="vertical"]::before,
+[data-separator="focus"][aria-orientation="vertical"]::before {
+  transform: scaleX(5);
+}
+
+[data-separator]:not([data-separator="disabled"])[aria-orientation="horizontal"]:hover::before,
+[data-separator="active"][aria-orientation="horizontal"]::before,
+[data-separator="focus"][aria-orientation="horizontal"]::before {
+  transform: scaleY(5);
 }
 
 /* ---- Dock root / leaves ---- */

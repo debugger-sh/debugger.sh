@@ -14,7 +14,7 @@ const debugA = await readFile(join(root, 'public/cs106b/debug.a'));
 const pch = await readFile(join(root, 'public/cs106b/support.pch'));
 const dictionary = await readFile(join(root, 'public/cs106b/EnglishWords.dat'));
 const { stanfordHeaders } = await import(pathToFileURL(join(root, 'cs106b/generated/headers.ts')).href);
-const { SIMPLETEST_H, SIMPLETEST_CPP, SIMPLETEST_RUNNER } = await import(
+const { SIMPLETEST_H, SIMPLETEST_RUNNER } = await import(
   pathToFileURL(join(root, 'lib/simpletest/embedded.ts')).href
 );
 
@@ -49,13 +49,19 @@ const config = `#define SIMPLETEST_NONCE "${nonce}"
 #define DEBUGGER_HAS_USER_MAIN 1
 `;
 
+const runnerBody = SIMPLETEST_RUNNER.replace(/^#include\s+"SimpleTest(?:_config)?\.h"\s*\n/gm, '');
+
 function buildFs() {
   const files = {
     ...stanfordHeaders,
-    'main.c': `#include "SimpleTest.h"\n#line 1 "main.c"\n${preparedStudent}`,
+    'main.c': [
+      '#include "SimpleTest.h"',
+      '#line 1 "/main.c"',
+      preparedStudent,
+      '#include "SimpleTest_config.h"',
+      runnerBody,
+    ].join('\n'),
     'SimpleTest.h': SIMPLETEST_H,
-    'SimpleTest.cpp': SIMPLETEST_CPP,
-    'SimpleTest_runner.cpp': SIMPLETEST_RUNNER,
     'SimpleTest_config.h': config,
   };
   const rootFs = {};
@@ -88,7 +94,7 @@ window.probe = {
       '/__cs106b/EnglishWords.dat': new Uint8Array(await (await fetch('/EnglishWords.dat')).arrayBuffer()),
     };
     engine.cppArtifacts = {
-      sources: ['/main.c', '/SimpleTest.cpp', '/SimpleTest_runner.cpp'],
+      sources: ['/main.c'],
       archives: ['/__cs106b/debug.a'],
       precompiledHeader: '/__cs106b/support.pch',
     };

@@ -7,7 +7,7 @@
  * This module only rewrites + injects the runner when live tests are present.
  */
 
-import { SIMPLETEST_CPP, SIMPLETEST_RUNNER } from '@/lib/simpletest/embedded';
+import { SIMPLETEST_RUNNER } from '@/lib/simpletest/embedded';
 
 export type PreparedCppRun = {
   /** Files to merge into engine.fs (besides Stanford headers / student main). */
@@ -285,6 +285,10 @@ export function prepareCppRun(studentSource: string, studentPath = 'main.c'): Pr
   // engine matches DWARF paths with exact equality, so `#line` must use that
   // same absolute path — a relative `main.c` will never hit.
   const dapPath = studentPath.startsWith('/') ? studentPath : `/${studentPath}`;
+  // Fold the tiny runner into the student TU. SimpleTest.cpp lives in the
+  // precompiled CS106B archive (run.a / debug.a), so a test run is one clang
+  // invocation instead of three — the engine reloads ~75MB clang wasm per file.
+  const runnerBody = SIMPLETEST_RUNNER.replace(/^#include\s+"SimpleTest(?:_config)?\.h"\s*\n/gm, '');
   const preparedSource = [
     '#pragma clang diagnostic push',
     '#pragma clang diagnostic ignored "-Wreturn-type"',
@@ -292,6 +296,9 @@ export function prepareCppRun(studentSource: string, studentPath = 'main.c'): Pr
     `#line 1 "${dapPath}"`,
     renamed,
     '#pragma clang diagnostic pop',
+    '',
+    '#include "SimpleTest_config.h"',
+    runnerBody,
   ].join('\n');
 
   return {
@@ -299,11 +306,9 @@ export function prepareCppRun(studentSource: string, studentPath = 'main.c'): Pr
     nonce,
     files: {
       [studentPath]: preparedSource,
-      // Header is already in the Stanford FS; only the TUs + config are run-specific.
-      'SimpleTest.cpp': SIMPLETEST_CPP,
-      'SimpleTest_runner.cpp': SIMPLETEST_RUNNER,
+      // Header is already in the Stanford FS; only the per-run config is injected.
       'SimpleTest_config.h': makeConfig(nonce, hadMain),
     },
-    extraSources: ['/SimpleTest.cpp', '/SimpleTest_runner.cpp'],
+    extraSources: [],
   };
 }

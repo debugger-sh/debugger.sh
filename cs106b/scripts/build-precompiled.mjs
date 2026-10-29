@@ -73,9 +73,26 @@ const sources = await Promise.all(
   })),
 );
 
+// Keep the original CS106B prelude and add SimpleTest.h so the starter's
+// test macros reuse PCH'd STL headers (algorithm/string/vector/…). Avoid
+// dumping every collection header into the PCH — larger PCHs slow validation.
 const preludeHeaders = ['error.h', 'vector.h', 'map.h', 'set.h', 'strlib.h', 'simpio.h'];
+const simpleTestHeaderPath = join(appRoot, 'lib/simpletest/SimpleTest.h');
+const simpleTestCppPath = join(appRoot, 'lib/simpletest/SimpleTest.cpp');
+const simpleTestHeaderBytes = await readFile(simpleTestHeaderPath);
+const simpleTestCppBytes = await readFile(simpleTestCppPath);
 const prelude =
-  preludeHeaders.map((name) => `#include "${name}"`).join('\n') + '\n#include <iostream>\n';
+  preludeHeaders.map((name) => `#include "${name}"`).join('\n') +
+  '\n#include <iostream>\n#include "SimpleTest.h"\n';
+
+// Bake SimpleTest.cpp into run.a / debug.a so test runs don't recompile it
+// when the amalgamated student TU path is not used (and as a linker fallback).
+sources.push({
+  name: 'SimpleTest.cpp',
+  path: 'lib/simpletest/SimpleTest.cpp',
+  compile: true,
+  bytes: simpleTestCppBytes,
+});
 
 const flags = [
   '-cc1',
@@ -111,7 +128,9 @@ const identity = {
   flags,
   recipeDigest: hash(await readFile(fileURLToPath(import.meta.url))),
   sources: Object.fromEntries(sources.map((s) => [s.name, hash(s.bytes)])),
+  simpleTestHeaderDigest: hash(simpleTestHeaderBytes),
   dictionaryDigest: hash(dictionary),
+  prelude,
 };
 const buildDigest = hash(JSON.stringify(identity));
 
@@ -166,6 +185,8 @@ if (artifactsFresh) {
     await mkdir(dirname(join(guestRoot, source.name)), { recursive: true });
     await writeFile(join(guestRoot, source.name), source.bytes);
   }
+  // SimpleTest.h is not under cpp/include; mount it for PCH + SimpleTest.cpp.
+  await writeFile(join(guestRoot, 'SimpleTest.h'), simpleTestHeaderBytes);
   await writeFile(join(guestRoot, 'cs106b-prelude.h'), prelude);
 
   const compilerModule = await WebAssembly.compile(compilerBytes);

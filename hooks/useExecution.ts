@@ -1,7 +1,7 @@
 'use client';
 
 import { Engine } from 'debugger-sh';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { LANGS, type Lang } from '@/components/constants';
 import type {
@@ -71,6 +71,10 @@ export function useExecution({
   const [testState, setTestState] = useState<TestRunState | null>(null);
 
   const runtimeRef = useRef<Engine | null>(null);
+  /** One Engine per language — recreating each Run re-fetches ~80MB of toolchain. */
+  const enginesRef = useRef<Partial<Record<Lang, Engine>>>({});
+  const engineInitRef = useRef<Partial<Record<Lang, Promise<Engine>>>>({});
+  const priorRunRef = useRef<Promise<unknown> | null>(null);
   const isRunningRef = useRef(false);
   const dapSeqRef = useRef(1);
   const ioCleanupRef = useRef<(() => void) | null>(null);
@@ -80,6 +84,26 @@ export function useExecution({
   const testDecoderRef = useRef<ReturnType<typeof createTestReportDecoder> | null>(null);
   const testStateRafRef = useRef<number | null>(null);
   const stdoutBufferRef = useRef('');
+  const getEngine = useCallback(async (lang: Lang): Promise<Engine> => {
+    const existing = enginesRef.current[lang];
+    if (existing) return existing;
+    let pending = engineInitRef.current[lang];
+    if (!pending) {
+      pending = Engine.create(lang as Parameters<typeof Engine.create>[0]).then((engine) => {
+        enginesRef.current[lang] = engine;
+        return engine;
+      });
+      engineInitRef.current[lang] = pending;
+    }
+    return pending;
+  }, []);
+
+  // Warm the C++ toolchain HTTP cache + the common (non-debug) Stanford
+  // artifacts as soon as the IDE mounts. Debug archives load on demand.
+  useEffect(() => {
+    void getEngine('c');
+    void loadStanfordArtifacts('run');
+  }, [getEngine]);
 
   const dapSend = useCallback(
     <T>(command: string, args: Record<string, unknown>) => {
@@ -269,6 +293,8 @@ export function useExecution({
       langRef.current = lang;
       const { fsKey } = LANGS[lang];
       breakpointsRef.current = breakpoints;
+      // Prefer a fast non-debug build when nothing needs DWARF / instrumentation.
+      const wantsDebug = LANGS[lang].debug && breakpoints.size > 0;
       teardown();
       clearDebug();
       setTestState(null);
@@ -286,18 +312,23 @@ export function useExecution({
           );
         }
 
-        const rt = await Engine.create(lang as Parameters<typeof Engine.create>[0]);
+        // A reused Engine returns the prior promise if run() is still settling.
+        if (priorRunRef.current) {
+          await priorRunRef.current.catch(() => undefined);
+        }
+
+        const rt = await getEngine(lang);
         runtimeRef.current = rt;
         if (lang === 'python') rt.debugger.filterInternals = true;
         dapSeqRef.current = 1;
 
         wireStdout(rt);
         wireStdin(rt);
-        rt.debugger.enabled = true;
+        rt.debugger.enabled = wantsDebug;
 
         if (lang === 'c') {
           const prepared = prepareCppRun(code, fsKey);
-          const stanford = await loadStanfordArtifacts('debug');
+          const stanford = await loadStanfordArtifacts(wantsDebug ? 'debug' : 'run');
           rt.fs = mergeDirNodes(
             pathsToDirNode(stanford.fsFiles),
             pathsToDirNode(prepared.files),
@@ -319,7 +350,7 @@ export function useExecution({
           rt.fs = { [fsKey]: code };
         }
 
-        const handshakeDoneRef = { current: false };
+        const handshakeDoneRef = { current: !wantsDebug };
         const tryDapHandshake = () => {
           if (handshakeDoneRef.current) return true;
           if (completeDapHandshake()) {
@@ -329,7 +360,7 @@ export function useExecution({
           return false;
         };
 
-        rt.debugger.on('event', (msg: unknown) => {
+        const onDebuggerEvent = (msg: unknown) => {
           const m = msg as { type?: string; event?: string };
           if (m?.type !== 'event') return;
           if (m.event === 'initialized') {
@@ -340,25 +371,32 @@ export function useExecution({
           } else if (m.event === 'terminated') {
             clearDebug();
           }
-        });
+        };
+        if (wantsDebug) {
+          rt.debugger.on('event', onDebuggerEvent);
+        }
 
         const runPromise = rt.run();
+        priorRunRef.current = runPromise;
         let runSettled = false;
         void runPromise.finally(() => {
           runSettled = true;
+          if (wantsDebug) rt.debugger.off('event', onDebuggerEvent);
         });
 
-        dapSend('initialize', {});
-        const handshakeDeadline = Date.now() + 120_000;
-        while (!handshakeDoneRef.current && !runSettled) {
-          if (tryDapHandshake()) break;
-          if (Date.now() >= handshakeDeadline) {
-            throw new Error(
-              'DAP handshake timed out after 120s — worker may be blocked or still ' +
-                'fetching toolchain WASM. Rebuild the engine with `npm run build` (not tools/dev).'
-            );
+        if (wantsDebug) {
+          dapSend('initialize', {});
+          const handshakeDeadline = Date.now() + 120_000;
+          while (!handshakeDoneRef.current && !runSettled) {
+            if (tryDapHandshake()) break;
+            if (Date.now() >= handshakeDeadline) {
+              throw new Error(
+                'DAP handshake timed out after 120s — worker may be blocked or still ' +
+                  'fetching toolchain WASM. Rebuild the engine with `npm run build` (not tools/dev).'
+              );
+            }
+            await new Promise((resolve) => setTimeout(resolve, 10));
           }
-          await new Promise((resolve) => setTimeout(resolve, 50));
         }
 
         const result = await runPromise;
@@ -373,8 +411,36 @@ export function useExecution({
         if (result.type === 'error') {
           stdoutBufferRef.current += `\r\n[ide error] ${result.error.type}: ${result.error.message}\r\n`;
         }
+        if (typeof window !== 'undefined') {
+          const timing =
+            result.type === 'completed'
+              ? result.timing
+              : { totalMs: null, buildMs: null, runMs: null };
+          (
+            window as Window & {
+              __ideRunTiming?: Record<string, unknown>;
+            }
+          ).__ideRunTiming = {
+            wallMs: Math.round(performance.now() - started),
+            wantsDebug,
+            ...timing,
+            resultType: result.type,
+            at: Date.now(),
+          };
+        }
       } catch (err) {
         stdoutBufferRef.current += `\r\n[ide error] ${err instanceof Error ? err.message : String(err)}\r\n`;
+        if (typeof window !== 'undefined') {
+          (
+            window as Window & {
+              __ideRunTiming?: Record<string, unknown>;
+            }
+          ).__ideRunTiming = {
+            wallMs: Math.round(performance.now() - started),
+            error: err instanceof Error ? err.message : String(err),
+            at: Date.now(),
+          };
+        }
       } finally {
         const ms = Math.round(performance.now() - started);
         const term = terminalRef.current;
@@ -392,6 +458,7 @@ export function useExecution({
       clearDebug,
       completeDapHandshake,
       dapSend,
+      getEngine,
       scheduleDebugRefresh,
       teardown,
       terminalRef,

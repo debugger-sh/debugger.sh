@@ -78,8 +78,10 @@ Next.js on Cloudflare Workers via [OpenNext](https://opennext.js.org/cloudflare)
 npx wrangler login   # once
 printf '%s' 'https://YOUR_PROJECT.supabase.co' | npx wrangler secret put NEXT_PUBLIC_SUPABASE_URL
 printf '%s' 'sb_publishable_…' | npx wrangler secret put NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY
-npm run deploy       # or: npm run preview
+npm run deploy       # OpenNext build + wrangler deploy (same as CF CI)
 ```
+
+Cloudflare build command should stay `npm run build` (produces `.open-next/`); deploy command `npx wrangler deploy`.
 
 Local `next dev` uses `.env.local`. Local Workers preview uses `.dev.vars` (gitignored).
 

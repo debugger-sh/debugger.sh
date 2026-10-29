@@ -32,7 +32,7 @@ export function VariablesPanel(props: VariablesPanelProps) {
         <DebugControls {...props.debugControls} />
       )}
       {props.frames.length > 0 && <SectionHeader>call stack</SectionHeader>}
-      <div style={{ maxHeight: '38%', overflowY: 'auto', flexShrink: 0 }}>
+      <div style={{ maxHeight: '38%', overflowY: 'auto', flexShrink: 0, colorScheme: 'dark' }}>
         <CallStack
           frames={props.frames}
           selectedFrameId={props.selectedFrameId}
@@ -40,7 +40,7 @@ export function VariablesPanel(props: VariablesPanelProps) {
         />
       </div>
       {props.scopes.length > 0 && <SectionHeader>variables</SectionHeader>}
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 0' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '4px 0', colorScheme: 'dark' }}>
         <Variables scopes={props.scopes} expandVariable={props.expandVariable} />
       </div>
     </aside>

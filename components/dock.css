@@ -1,4 +1,39 @@
 /*
+ * Dark scrollbars. Prefer ::-webkit-scrollbar (forces non-overlay in Blink)
+ * over scrollbar-width, which keeps macOS overlay bars and a white track.
+ */
+* {
+  scrollbar-color: #525252 #0a0a0a;
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: #0a0a0a;
+}
+
+*::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #404040;
+  border-radius: 4px;
+  border: 2px solid #0a0a0a;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #525252;
+  border: 2px solid #0a0a0a;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-corner {
+  background: #0a0a0a;
+}
+
+/*
  * Separators: 1px stroke; hover/active grow a centered highlight via
  * transform so layout doesn’t shift. High z-index so the full strip
  * (tab bars + pane bodies) paints above dock chrome.

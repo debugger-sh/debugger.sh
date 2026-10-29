@@ -33,7 +33,7 @@ export function TestsPanel({ state, isRunning }: TestsPanelProps) {
       <div style={{ padding: '8px 12px', color: '#94a3b8', borderBottom: '1px solid #1a1a1a' }}>
         {status}
       </div>
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', colorScheme: 'dark' }}>
         {tests.map((test) => (
           <TestRow key={test.key} test={test} result={results.get(test.key)} />
         ))}

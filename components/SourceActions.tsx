@@ -1,5 +1,7 @@
 'use client';
 
+import { ArrowDownToDot, ArrowUpFromDot, RedoDot } from 'lucide-react';
+
 export type RunStopProps = {
   isRunning: boolean;
   onRun: () => void;
@@ -102,62 +104,20 @@ function StopIcon() {
   );
 }
 
+const stepIconProps = {
+  size: 13,
+  strokeWidth: 1.75,
+  'aria-hidden': true as const,
+};
+
 function StepOverIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 13 13"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M2 7 Q6.5 1.5 11 7" />
-      <path d="M11 7 L8.7 5.6 M11 7 L9.2 8.6" />
-      <circle cx="6.5" cy="10.5" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
-  );
+  return <RedoDot {...stepIconProps} />;
 }
 
 function StepIntoIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 13 13"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M6.5 2 L6.5 8" />
-      <path d="M3.8 5.5 L6.5 8.5 L9.2 5.5" />
-      <circle cx="6.5" cy="11.2" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
-  );
+  return <ArrowDownToDot {...stepIconProps} />;
 }
 
 function StepOutIcon() {
-  return (
-    <svg
-      width="13"
-      height="13"
-      viewBox="0 0 13 13"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="1.2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden
-    >
-      <path d="M6.5 8 L6.5 2" />
-      <path d="M3.8 4.5 L6.5 1.5 L9.2 4.5" />
-      <circle cx="6.5" cy="11.2" r="0.9" fill="currentColor" stroke="none" />
-    </svg>
-  );
+  return <ArrowUpFromDot {...stepIconProps} />;
 }

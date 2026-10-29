@@ -1,6 +1,5 @@
 node_modules
 .next
-.open-next
 out
 .DS_Store
 *.log
@@ -22,3 +21,5 @@ public/cs106b/*.a
 public/cs106b/*.pch
 public/cs106b/EnglishWords.dat
 public/cs106b/precompiled.json
+
+.env.production

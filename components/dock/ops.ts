@@ -76,19 +76,6 @@ export function setActive(state: DockState, groupId: string, pane: PaneId): Dock
   });
 }
 
-export function setSplitSizes(
-  state: DockState,
-  splitId: string,
-  sizes: [number, number],
-): DockState {
-  const root = mapNode(state.root, (n) => {
-    if (!isSplitNode(n) || n.id !== splitId) return n;
-    if (n.sizes[0] === sizes[0] && n.sizes[1] === sizes[1]) return n;
-    return { ...n, sizes };
-  });
-  return root === state.root ? state : { root };
-}
-
 export function closeTab(state: DockState, groupId: string, pane: PaneId): DockState {
   const group = collectGroups(state.root).find((g) => g.id === groupId);
   if (!group || !group.tabs.includes(pane)) return state;

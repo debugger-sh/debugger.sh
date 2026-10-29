@@ -1,7 +1,9 @@
-# Static asset caching for OpenNext / Cloudflare Workers.
-# https://opennext.js.org/cloudflare/caching
+# Cloudflare Workers Static Assets _headers file
+# https://developers.cloudflare.com/workers/static-assets/headers/
 #
-# COOP/COEP for the app itself come from next.config.ts headers().
+# COOP/COEP are required by @jtrb/runtime so SharedArrayBuffer works
+# (the runtime uses it for stdin).
 
-/_next/static/*
-  Cache-Control: public,max-age=31536000,immutable
+/*
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Opener-Policy: same-origin

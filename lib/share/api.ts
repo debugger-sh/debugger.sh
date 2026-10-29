@@ -37,11 +37,9 @@ export async function getShare(id: string): Promise<WorkspaceState | null> {
   return parseWorkspaceState(data?.state);
 }
 
-/** Query-param URL so shares work on static `/` with no Cloudflare path rewrite. */
+/** Path URL; Cloudflare SPA fallback serves `/` for unknown paths. */
 export function shareUrl(id: string): string {
-  const url = new URL(window.location.origin);
-  url.searchParams.set('s', id);
-  return url.toString();
+  return `${window.location.origin}/${id}`;
 }
 
 export { isShareId } from './id';

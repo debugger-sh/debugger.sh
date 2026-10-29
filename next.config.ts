@@ -1,4 +1,4 @@
-import type { NextConfig } from 'next';
+import type { NextConfig } from "next";
 
 // COOP/COEP are required by debugger-sh to use SharedArrayBuffer for stdin.
 //
@@ -9,17 +9,20 @@ import type { NextConfig } from 'next';
 // honored by the Next dev server, so we also keep the `headers()` config
 // below. It's a no-op for `next build` with `output: 'export'`.
 const nextConfig: NextConfig = {
-  output: 'export',
+  output: "export",
   images: { unoptimized: true },
   // Keep the prebundled debugger-sh dist from being re-compiled oddly by Next.
-  transpilePackages: ['debugger-sh'],
+  transpilePackages: ["debugger-sh"],
+  async rewrites() {
+    return [{ source: "/:shareId([0-9A-Za-z]{8,16})", destination: "/" }];
+  },
   async headers() {
     return [
       {
-        source: '/:path*',
+        source: "/:path*",
         headers: [
-          { key: 'Cross-Origin-Embedder-Policy', value: 'require-corp' },
-          { key: 'Cross-Origin-Opener-Policy', value: 'same-origin' },
+          { key: "Cross-Origin-Embedder-Policy", value: "require-corp" },
+          { key: "Cross-Origin-Opener-Policy", value: "same-origin" },
         ],
       },
     ];

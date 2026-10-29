@@ -5,15 +5,16 @@
 // package.json and try the OpenNext SSR migration, which doesn't work for
 // `output: 'export'` static sites.
 //
-// The Worker is wired up to the `ide.fabioibanez.com` subdomain via a
-// Custom Domain in the Cloudflare dashboard, so requests land at the asset
-// root (`/`, `/_next/...`) — no path rewriting needed.
+// The Worker is wired up via a Custom Domain in the Cloudflare dashboard.
+// Share links use /{id}; SPA not_found_handling serves index.html for those.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "ide",
   "compatibility_date": "2026-05-02",
   "assets": {
     "directory": "./out",
-    "not_found_handling": "404-page"
+    // Unknown paths (e.g. /Ab3xY9kQ2m share links) serve index.html; the
+    // client reads the share id from window.location.pathname.
+    "not_found_handling": "single-page-application"
   }
 }

@@ -27,9 +27,12 @@ function initialBreakpoints(): Record<Lang, Set<number>> {
   ) as Record<Lang, Set<number>>;
 }
 
-function shareIdFromSearch(): string | null {
-  const id = new URLSearchParams(window.location.search).get('s');
-  return id && isShareId(id) ? id : null;
+function shareIdFromLocation(): string | null {
+  const pathId = window.location.pathname.replace(/^\/+|\/+$/g, '');
+  if (pathId && isShareId(pathId)) return pathId;
+  // Legacy / local fallback: /?s=<id>
+  const queryId = new URLSearchParams(window.location.search).get('s');
+  return queryId && isShareId(queryId) ? queryId : null;
 }
 
 export default function Page() {
@@ -72,7 +75,7 @@ export default function Page() {
   );
 
   useEffect(() => {
-    const shareId = shareIdFromSearch();
+    const shareId = shareIdFromLocation();
     if (!shareId) {
       setShareReady(true);
       return;

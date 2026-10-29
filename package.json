@@ -4,10 +4,13 @@
   "private": true,
   "license": "MIT",
   "scripts": {
+    "predev": "npm run build:cs106b",
     "dev": "next dev",
+    "prebuild": "npm run build:cs106b",
     "build": "next build",
-    "start": "next start",
-    "bump": "npm i debugger-sh@latest && git commit -am 'bump engine' && git push"
+    "build:cs106b": "node cs106b/scripts/build-precompiled.mjs",
+    "test:smoke": "node scripts/smoke-prepare.mjs && node --experimental-strip-types scripts/smoke-engine.mjs",
+    "start": "next start"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
@@ -21,7 +24,7 @@
     "@uiw/react-codemirror": "^4.25.9",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/xterm": "^5.5.0",
-    "debugger-sh": "^0.3.15",
+    "debugger-sh": "https://github.com/justinvassantachart/engine/releases/download/debugger-sh-v0.3.15-webide.0.8.0.1/debugger-sh-0.3.15-webide.0.8.0.1.tgz",
     "next": "^15.0.3",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
@@ -31,6 +34,7 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
+    "playwright": "^1.64.1",
     "typescript": "^5.9.3"
   }
 }

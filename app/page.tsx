@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 
 import CodeEditor from '@/components/CodeEditor';
 import { LANGS, type Lang } from '@/components/constants';
@@ -8,6 +8,7 @@ import { LanguageSelect } from '@/components/LanguageSelect';
 import ResizableWorkspace from '@/components/ResizableWorkspace';
 import { SourceActions } from '@/components/SourceActions';
 import Terminal, { type TerminalHandle } from '@/components/Terminal';
+import { TestsPanel } from '@/components/TestsPanel';
 import { VariablesPanel } from '@/components/VariablesPanel';
 import { useExecution } from '@/hooks/useExecution';
 
@@ -29,6 +30,8 @@ export default function Page() {
   const [breakpointsByLang, setBreakpointsByLang] =
     useState<Record<Lang, Set<number>>>(initialBreakpoints);
   const terminalRef = useRef<TerminalHandle | null>(null);
+  // Stable element identity so the xterm instance is not remounted on each IDE render.
+  const terminal = useMemo(() => <Terminal ref={terminalRef} />, []);
   const exec = useExecution({ terminalRef });
 
   const code = sources[lang];
@@ -89,7 +92,8 @@ export default function Page() {
               isPaused={exec.isPaused}
             />
           ),
-          output: <Terminal ref={terminalRef} />,
+          output: terminal,
+          tests: <TestsPanel state={exec.testState} isRunning={exec.isRunning} />,
         }}
         paneActions={{
           editor: (

@@ -12,13 +12,28 @@ export type LangConfig = {
 
 export const LANGS: Record<Lang, LangConfig> = {
   c: {
-    label: 'C',
+    label: 'C++',
     fsKey: 'main.c',
     sourcePath: '/main.c',
-    defaultCode: `#include <stdio.h>
+    defaultCode: `#include <iostream>
+#include "vector.h"
+#include "SimpleTest.h"
 
-int main(void) {
-  printf("Hello, world!\\n");
+using namespace std;
+
+PROVIDED_TEST("Vector basic ops") {
+  Vector<int> v;
+  v.add(1);
+  v.add(2);
+  EXPECT_EQUAL(v.size(), 2);
+  EXPECT_EQUAL(v[0], 1);
+}
+
+int main() {
+  Vector<string> words;
+  words.add("hello");
+  words.add("world");
+  cout << "main: " << words << endl;
   return 0;
 }
 `,

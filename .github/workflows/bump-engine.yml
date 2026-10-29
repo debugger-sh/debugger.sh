@@ -2,7 +2,6 @@ name: Bump debugger-sh engine
 
 on:
   schedule:
-    # Every day at 09:00 UTC. Change as needed.
     - cron: "*/30 * * * *"
   workflow_dispatch: {}
 
@@ -29,6 +28,14 @@ jobs:
         run: |
           set -euo pipefail
           OLD_VERSION=$(node -p "require('./package.json').dependencies['debugger-sh']")
+          # Pin to a GitHub release tarball (fork builds) — do not auto-replace with npm latest.
+          if [[ "$OLD_VERSION" == http* ]]; then
+            echo "Pinned to release URL; skipping npm latest bump."
+            echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"
+            echo "new=$OLD_VERSION" >> "$GITHUB_OUTPUT"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           npm install debugger-sh@latest --save
           NEW_VERSION=$(node -p "require('./package.json').dependencies['debugger-sh']")
           echo "old=$OLD_VERSION" >> "$GITHUB_OUTPUT"

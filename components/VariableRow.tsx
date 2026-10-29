@@ -2,6 +2,8 @@
 
 import { useState } from 'react';
 
+import { presentStanfordVariable, stanfordCollectionName } from '@/lib/stanford/formatters';
+
 import type { DapVariable } from './dap-types';
 
 export type VariableRowProps = {
@@ -13,12 +15,21 @@ export type VariableRowProps = {
 export function VariableRow({ variable, expand, depth }: VariableRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<DapVariable[] | null>(null);
+  const [summary, setSummary] = useState<string | null>(null);
+  const stanfordName = stanfordCollectionName(variable.type);
   const expandable = variable.variablesReference > 0;
+  const displayValue = summary ?? (stanfordName ? stanfordName : variable.value);
 
   const toggle = () => {
     if (!expandable) return;
     if (!expanded && children === null) {
-      setChildren(expand(variable.variablesReference));
+      const presented = presentStanfordVariable(variable, expand);
+      if (presented) {
+        setSummary(presented.summary);
+        setChildren(presented.children);
+      } else {
+        setChildren(expand(variable.variablesReference));
+      }
     }
     setExpanded((e) => !e);
   };
@@ -45,7 +56,7 @@ export function VariableRow({ variable, expand, depth }: VariableRowProps) {
           <span style={{ color: '#64748b', fontSize: 10, flexShrink: 0 }}>{variable.type}</span>
         )}
         <span
-          title={variable.value}
+          title={displayValue}
           style={{
             color: '#94a3b8',
             marginLeft: 'auto',
@@ -56,12 +67,17 @@ export function VariableRow({ variable, expand, depth }: VariableRowProps) {
             minWidth: 0,
           }}
         >
-          {variable.value}
+          {displayValue}
         </span>
       </div>
       {expanded &&
-        children?.map((child) => (
-          <VariableRow key={child.name} variable={child} expand={expand} depth={depth + 1} />
+        children?.map((child, index) => (
+          <VariableRow
+            key={`${child.name}-${index}`}
+            variable={child}
+            expand={expand}
+            depth={depth + 1}
+          />
         ))}
     </div>
   );

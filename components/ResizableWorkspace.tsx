@@ -17,28 +17,35 @@ import { Group, Panel, Separator } from 'react-resizable-panels';
 
 import './dock.css';
 
-export type PaneId = 'editor' | 'variables' | 'output';
+export type PaneId = 'editor' | 'variables' | 'output' | 'tests';
 
-type ZoneId = 'main' | 'side' | 'panel';
+type ZoneId = 'main' | 'side' | 'panel' | 'aux';
 
 const PANE_LABELS: Record<PaneId, string> = {
   editor: 'source',
   variables: 'variables',
   output: 'terminal',
+  tests: 'tests',
 };
 
-const ZONES: ZoneId[] = ['main', 'side', 'panel'];
+const PANE_IDS: readonly PaneId[] = ['editor', 'variables', 'output', 'tests'];
+const ZONES: ZoneId[] = ['main', 'side', 'panel', 'aux'];
 
-/** Which pane lives in each dock region (VS Code–style: main | right strip | bottom panel). */
+/** Which pane lives in each dock region. */
 type Placement = Record<ZoneId, PaneId>;
 
 const DEFAULT_PLACEMENT: Placement = {
   main: 'editor',
   side: 'variables',
   panel: 'output',
+  aux: 'tests',
 };
 
-const PLACEMENT_KEY = 'ide-dock-placement-v2';
+const PLACEMENT_KEY = 'ide-dock-placement-v3';
+
+function isPaneId(x: unknown): x is PaneId {
+  return typeof x === 'string' && (PANE_IDS as readonly string[]).includes(x);
+}
 
 function isValidPlacement(x: unknown): x is Placement {
   if (typeof x !== 'object' || x === null) return false;
@@ -46,11 +53,11 @@ function isValidPlacement(x: unknown): x is Placement {
   const seen = new Set<PaneId>();
   for (const z of ZONES) {
     const p = o[z];
-    if (p !== 'editor' && p !== 'variables' && p !== 'output') return false;
+    if (!isPaneId(p)) return false;
     if (seen.has(p)) return false;
     seen.add(p);
   }
-  return seen.size === 3;
+  return seen.size === 4;
 }
 
 function swapZones(p: Placement, a: ZoneId, b: ZoneId): Placement {
@@ -143,8 +150,6 @@ function DockZone({
           <>
             <div style={{ flex: 1 }} />
             <div
-              // Stop drag activation when interacting with actions; the title bar
-              // owns dnd-kit's pointerdown listener.
               onPointerDown={(e) => e.stopPropagation()}
               style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'auto' }}
             >
@@ -176,7 +181,7 @@ export type ResizableWorkspaceProps = {
 };
 
 /**
- * VS Code–style dock: main (left) | side (right) on top, full-width panel on bottom.
+ * VS Code–style dock: main | side on top; panel | aux on the bottom.
  * Drag a pane’s title onto another zone to swap. Resize with the splitters.
  */
 export default function ResizableWorkspace({ panes, paneActions }: ResizableWorkspaceProps) {
@@ -225,8 +230,6 @@ export default function ResizableWorkspace({ panes, paneActions }: ResizableWork
 
   return (
     <DndContext
-      // Stable id so a11y `aria-describedby` does not rely on a module-level
-      // counter that diverges between SSR and the client (hydration mismatch).
       id="ide-resizable-workspace"
       sensors={sensors}
       collisionDetection={pointerWithin}
@@ -252,7 +255,7 @@ export default function ResizableWorkspace({ panes, paneActions }: ResizableWork
           orientation="vertical"
           style={{ flex: 1, minHeight: 0, minWidth: 0, height: '100%' }}
         >
-          <Panel id="top" minSize="18%" defaultSize="70%">
+          <Panel id="top" minSize="18%" defaultSize="68%">
             <Group
               id="ide-dock-horizontal"
               orientation="horizontal"
@@ -271,11 +274,29 @@ export default function ResizableWorkspace({ panes, paneActions }: ResizableWork
               </Panel>
             </Group>
           </Panel>
-          <Separator id="sep-top-panel" style={{ height: 5 }} />
-          <Panel id="bottom" minSize="14%" defaultSize="30%">
-            <DockZone zone="panel" pane={placement.panel} actions={paneActions?.[placement.panel]}>
-              {panes[placement.panel]}
-            </DockZone>
+          <Separator id="sep-top-bottom" style={{ height: 5 }} />
+          <Panel id="bottom" minSize="14%" defaultSize="32%">
+            <Group
+              id="ide-dock-bottom"
+              orientation="horizontal"
+              style={{ height: '100%', minHeight: 0, width: '100%' }}
+            >
+              <Panel id="panel" minSize="20%" defaultSize="55%">
+                <DockZone
+                  zone="panel"
+                  pane={placement.panel}
+                  actions={paneActions?.[placement.panel]}
+                >
+                  {panes[placement.panel]}
+                </DockZone>
+              </Panel>
+              <Separator id="sep-panel-aux" style={{ width: 5 }} />
+              <Panel id="aux" minSize="20%" defaultSize="45%">
+                <DockZone zone="aux" pane={placement.aux} actions={paneActions?.[placement.aux]}>
+                  {panes[placement.aux]}
+                </DockZone>
+              </Panel>
+            </Group>
           </Panel>
         </Group>
       </div>

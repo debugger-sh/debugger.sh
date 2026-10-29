@@ -10,3 +10,10 @@ next-env.d.ts
 # wrangler local state and secrets — never commit
 .wrangler
 .dev.vars
+
+# Generated Stanford archives / PCH / header maps (rebuilt by npm run build:cs106b)
+cs106b/generated/
+public/cs106b/*.a
+public/cs106b/*.pch
+public/cs106b/EnglishWords.dat
+public/cs106b/precompiled.json

@@ -1,17 +1,32 @@
-"use client";
+'use client';
 
-import { Engine } from "debugger-sh";
-import { useCallback, useRef, useState } from "react";
+import { Engine } from 'debugger-sh';
+import { useCallback, useRef, useState } from 'react';
 
-import { LANGS, type Lang } from "@/components/constants";
+import { LANGS, type Lang } from '@/components/constants';
 import type {
   DapResponse,
   DapVariable,
   Scope,
   ScopeView,
   StackFrame,
-} from "@/components/dap-types";
-import type { TerminalHandle } from "@/components/Terminal";
+} from '@/components/dap-types';
+import type { TerminalHandle } from '@/components/Terminal';
+import { loadStanfordArtifacts } from '@/lib/stanford/loadArtifacts';
+import { mergeDirNodes, pathsToDirNode } from '@/lib/stanford/fsTree';
+import { prepareCppRun } from '@/lib/testing/prepare';
+import {
+  createTestReportDecoder,
+  type TestRunState,
+} from '@/lib/testing/protocol';
+
+/** SimpleTest runner / registry frames — hide from the call stack while debugging tests. */
+function isSimpleTestHarnessFrame(frame: StackFrame): boolean {
+  const path = frame.source?.path ?? '';
+  if (/SimpleTest(?:_runner)?\.(?:cpp|c|h)$/i.test(path)) return true;
+  if (/simpletest::/i.test(frame.name)) return true;
+  return false;
+}
 
 export type UseExecutionOptions = {
   terminalRef: React.RefObject<TerminalHandle | null>;
@@ -25,6 +40,7 @@ export type ExecutionApi = {
   selectedFrameId: number | null;
   scopes: ScopeView[];
   debugLoading: boolean;
+  testState: TestRunState | null;
   run: (
     code: string,
     breakpoints: ReadonlySet<number>,
@@ -52,6 +68,7 @@ export function useExecution({
   const [selectedFrameId, setSelectedFrameId] = useState<number | null>(null);
   const [scopes, setScopes] = useState<ScopeView[]>([]);
   const [debugLoading, setDebugLoading] = useState(false);
+  const [testState, setTestState] = useState<TestRunState | null>(null);
 
   const runtimeRef = useRef<Engine | null>(null);
   const isRunningRef = useRef(false);
@@ -59,14 +76,17 @@ export function useExecution({
   const ioCleanupRef = useRef<(() => void) | null>(null);
   const stdinDisposeRef = useRef<(() => void) | null>(null);
   const breakpointsRef = useRef<ReadonlySet<number>>(new Set());
-  const langRef = useRef<Lang>("c");
+  const langRef = useRef<Lang>('c');
+  const testDecoderRef = useRef<ReturnType<typeof createTestReportDecoder> | null>(null);
+  const testStateRafRef = useRef<number | null>(null);
+  const stdoutBufferRef = useRef('');
 
   const dapSend = useCallback(
     <T>(command: string, args: Record<string, unknown>) => {
       const rt = runtimeRef.current;
       if (!rt) return null;
       const res = rt.debugger.send({
-        type: "request",
+        type: 'request',
         seq: dapSeqRef.current++,
         command,
         arguments: args,
@@ -78,7 +98,7 @@ export function useExecution({
 
   const sendBreakpoints = useCallback(() => {
     const lines = Array.from(breakpointsRef.current).sort((a, b) => a - b);
-    dapSend("setBreakpoints", {
+    dapSend('setBreakpoints', {
       source: { path: LANGS[langRef.current].sourcePath },
       breakpoints: lines.map((line) => ({ line })),
     });
@@ -87,17 +107,17 @@ export function useExecution({
   /** Steps 5–8 in the engine DAP lifecycle; returns true once the worker is unblocked. */
   const completeDapHandshake = useCallback((): boolean => {
     sendBreakpoints();
-    dapSend("setExceptionBreakpoints", { filters: [] });
-    const res = dapSend("configurationDone", {}) as DapResponse<unknown> | null;
+    dapSend('setExceptionBreakpoints', { filters: [] });
+    const res = dapSend('configurationDone', {}) as DapResponse<unknown> | null;
     return res?.success === true;
   }, [dapSend, sendBreakpoints]);
 
   const loadFrame = useCallback(
     (frameId: number) => {
-      const scopeRes = dapSend<{ scopes: Scope[] }>("scopes", { frameId });
+      const scopeRes = dapSend<{ scopes: Scope[] }>('scopes', { frameId });
       const list = scopeRes?.body?.scopes ?? [];
       const views: ScopeView[] = list.map((sc) => {
-        const v = dapSend<{ variables: DapVariable[] }>("variables", {
+        const v = dapSend<{ variables: DapVariable[] }>('variables', {
           variablesReference: sc.variablesReference,
         });
         return { name: sc.name, variables: v?.body?.variables ?? [] };
@@ -110,11 +130,12 @@ export function useExecution({
   const refreshDebugSession = useCallback(() => {
     setDebugLoading(true);
     try {
-      const res = dapSend<{ stackFrames: StackFrame[] }>("stackTrace", {
+      const res = dapSend<{ stackFrames: StackFrame[] }>('stackTrace', {
         threadId: 1,
       });
       if (!res?.success) return;
-      const fs = res.body?.stackFrames ?? [];
+      // Hide SimpleTest runner / harness frames when stopped inside a test.
+      const fs = (res.body?.stackFrames ?? []).filter((frame) => !isSimpleTestHarnessFrame(frame));
       setFrames(fs);
       if (fs.length === 0) {
         setSelectedFrameId(null);
@@ -152,21 +173,45 @@ export function useExecution({
     stdinDisposeRef.current = null;
     runtimeRef.current = null;
     isRunningRef.current = false;
+    testDecoderRef.current = null;
   }, []);
 
   const wireStdout = useCallback(
     (rt: Engine) => {
-      const term = terminalRef.current;
-      if (!term) return;
       const decoder = new TextDecoder();
+      // Buffer program output and flush via terminalRef on each chunk. Reading
+      // the ref at write-time avoids a stale xterm handle if React remounts the
+      // terminal while the run is in flight.
       const onData = (chunk: Uint8Array) => {
-        term.write(decoder.decode(chunk).replace(/\r?\n/g, "\r\n"));
+        const text = decoder.decode(chunk);
+        const filtered = testDecoderRef.current
+          ? testDecoderRef.current.push(text)
+          : text;
+        if (filtered) {
+          // Keep a durable copy — xterm can remount when the Tests panel
+          // updates, which would otherwise drop live writes.
+          stdoutBufferRef.current += filtered.replace(/\r?\n/g, '\r\n');
+          terminalRef.current?.write(filtered.replace(/\r?\n/g, '\r\n'));
+        }
+        if (testDecoderRef.current) {
+          if (testStateRafRef.current == null) {
+            testStateRafRef.current = requestAnimationFrame(() => {
+              testStateRafRef.current = null;
+              const decoder = testDecoderRef.current;
+              if (!decoder) return;
+              setTestState({
+                ...decoder.state,
+                results: new Map(decoder.state.results),
+              });
+            });
+          }
+        }
       };
-      rt.stdout.on("data", onData);
-      rt.stderr.on("data", onData);
+      rt.stdout.on('data', onData);
+      rt.stderr.on('data', onData);
       ioCleanupRef.current = () => {
-        rt.stdout.off("data", onData);
-        rt.stderr.off("data", onData);
+        rt.stdout.off('data', onData);
+        rt.stderr.off('data', onData);
       };
     },
     [terminalRef]
@@ -177,39 +222,39 @@ export function useExecution({
       const term = terminalRef.current;
       if (!term) return;
       const encoder = new TextEncoder();
-      let buffer = "";
+      let buffer = '';
       stdinDisposeRef.current = term.onData((data) => {
         if (!isRunningRef.current) return;
-        if (data === "\x03") {
-          term.write("^C\r\n");
+        if (data === '\x03') {
+          term.write('^C\r\n');
           rt.stop();
           return;
         }
-        if (data === "\x04") {
-          term.write("^D\r\n");
-          void rt.stdin.write(encoder.encode("\x04"));
-          buffer = "";
+        if (data === '\x04') {
+          term.write('^D\r\n');
+          void rt.stdin.write(encoder.encode('\x04'));
+          buffer = '';
           return;
         }
-        if (data === "\x0c") {
+        if (data === '\x0c') {
           term.clear();
-          buffer = "";
+          buffer = '';
           return;
         }
-        if (data === "\r") {
-          term.write("\r\n");
+        if (data === '\r') {
+          term.write('\r\n');
           void rt.stdin.write(encoder.encode(`${buffer}\n`));
-          buffer = "";
+          buffer = '';
           return;
         }
-        if (data === "\u007f") {
+        if (data === '\u007f') {
           if (buffer.length > 0) {
             buffer = buffer.slice(0, -1);
-            term.write("\b \b");
+            term.write('\b \b');
           }
           return;
         }
-        if (data.startsWith("\x1b")) return;
+        if (data.startsWith('\x1b')) return;
         buffer += data;
         term.write(data);
       });
@@ -226,28 +271,53 @@ export function useExecution({
       breakpointsRef.current = breakpoints;
       teardown();
       clearDebug();
+      setTestState(null);
+      stdoutBufferRef.current = '';
       setIsRunning(true);
       isRunningRef.current = true;
       terminalRef.current?.clear();
       terminalRef.current?.focus();
 
       try {
-        if (typeof window !== "undefined" && !window.crossOriginIsolated) {
+        if (typeof window !== 'undefined' && !window.crossOriginIsolated) {
           terminalRef.current?.writeln(
-            "\r\n[ide warning] SharedArrayBuffer is unavailable (crossOriginIsolated=false). " +
-              "Run via `npm run dev` — not a static export preview."
+            '\r\n[ide warning] SharedArrayBuffer is unavailable (crossOriginIsolated=false). ' +
+              'Run via `npm run dev` — not a static export preview.'
           );
         }
 
         const rt = await Engine.create(lang as Parameters<typeof Engine.create>[0]);
         runtimeRef.current = rt;
-        if (lang === "python") rt.debugger.filterInternals = true;
+        if (lang === 'python') rt.debugger.filterInternals = true;
         dapSeqRef.current = 1;
 
         wireStdout(rt);
         wireStdin(rt);
-        rt.fs = { [fsKey]: code };
         rt.debugger.enabled = true;
+
+        if (lang === 'c') {
+          const prepared = prepareCppRun(code, fsKey);
+          const stanford = await loadStanfordArtifacts('debug');
+          rt.fs = mergeDirNodes(
+            pathsToDirNode(stanford.fsFiles),
+            pathsToDirNode(prepared.files),
+          );
+          rt.binaryFiles = { ...stanford.binaryFiles };
+          const studentSourcePath = `/${fsKey}`;
+          rt.cppArtifacts = {
+            ...stanford.cppArtifacts,
+            sources: prepared.hasTests
+              ? [studentSourcePath, ...prepared.extraSources]
+              : [studentSourcePath],
+          };
+          if (prepared.hasTests) {
+            testDecoderRef.current = createTestReportDecoder(prepared.nonce);
+            // Defer React state updates until after the engine is wired so a
+            // re-render cannot remount the terminal mid-setup.
+          }
+        } else {
+          rt.fs = { [fsKey]: code };
+        }
 
         const handshakeDoneRef = { current: false };
         const tryDapHandshake = () => {
@@ -259,53 +329,60 @@ export function useExecution({
           return false;
         };
 
-        rt.debugger.on("event", (msg: unknown) => {
+        rt.debugger.on('event', (msg: unknown) => {
           const m = msg as { type?: string; event?: string };
-          if (m?.type !== "event") return;
-          if (m.event === "initialized") {
+          if (m?.type !== 'event') return;
+          if (m.event === 'initialized') {
             tryDapHandshake();
-          } else if (m.event === "stopped") {
+          } else if (m.event === 'stopped') {
             setIsPaused(true);
             scheduleDebugRefresh();
-          } else if (m.event === "terminated") {
+          } else if (m.event === 'terminated') {
             clearDebug();
           }
         });
 
-        // Match tools/dap/tests/lang/adapters/c-cpp/engine.ts: start run() before
-        // initialize, then complete the handshake once the worker attaches.
         const runPromise = rt.run();
         let runSettled = false;
         void runPromise.finally(() => {
           runSettled = true;
         });
 
-        dapSend("initialize", {});
+        dapSend('initialize', {});
         const handshakeDeadline = Date.now() + 120_000;
         while (!handshakeDoneRef.current && !runSettled) {
           if (tryDapHandshake()) break;
           if (Date.now() >= handshakeDeadline) {
             throw new Error(
-              "DAP handshake timed out after 120s — worker may be blocked or still " +
-                "fetching toolchain WASM. Rebuild the engine with `npm run build` (not tools/dev)."
+              'DAP handshake timed out after 120s — worker may be blocked or still ' +
+                'fetching toolchain WASM. Rebuild the engine with `npm run build` (not tools/dev).'
             );
           }
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
 
         const result = await runPromise;
-        if (result.type === "error") {
-          terminalRef.current?.writeln(
-            `\r\n[ide error] ${result.error.type}: ${result.error.message}`
-          );
+        if (testDecoderRef.current) {
+          const rest = testDecoderRef.current.finish();
+          if (rest) stdoutBufferRef.current += rest.replace(/\r?\n/g, '\r\n');
+          setTestState({
+            ...testDecoderRef.current.state,
+            results: new Map(testDecoderRef.current.state.results),
+          });
+        }
+        if (result.type === 'error') {
+          stdoutBufferRef.current += `\r\n[ide error] ${result.error.type}: ${result.error.message}\r\n`;
         }
       } catch (err) {
-        terminalRef.current?.writeln(
-          `\r\n[ide error] ${err instanceof Error ? err.message : String(err)}`
-        );
+        stdoutBufferRef.current += `\r\n[ide error] ${err instanceof Error ? err.message : String(err)}\r\n`;
       } finally {
         const ms = Math.round(performance.now() - started);
-        terminalRef.current?.writeln(`\r\n\x1b[3;90mRan in ${ms}ms\x1b[0m`);
+        const term = terminalRef.current;
+        if (term) {
+          term.clear();
+          if (stdoutBufferRef.current) term.write(stdoutBufferRef.current);
+          term.writeln(`\r\n\x1b[3;90mRan in ${ms}ms\x1b[0m`);
+        }
         teardown();
         clearDebug();
         setIsRunning(false);
@@ -332,7 +409,7 @@ export function useExecution({
 
   const resume = useCallback(() => {
     if (!isRunningRef.current) return;
-    dapSend("continue", { threadId: 1 });
+    dapSend('continue', { threadId: 1 });
     setIsPaused(false);
     setStoppedLine(null);
     setFrames([]);
@@ -341,7 +418,7 @@ export function useExecution({
   }, [dapSend]);
 
   const step = useCallback(
-    (command: "next" | "stepIn" | "stepOut") => {
+    (command: 'next' | 'stepIn' | 'stepOut') => {
       if (!isRunningRef.current) return;
       setDebugLoading(true);
       setScopes([]);
@@ -362,7 +439,7 @@ export function useExecution({
   const expandVariable = useCallback(
     (ref: number): DapVariable[] => {
       if (ref <= 0) return [];
-      const res = dapSend<{ variables: DapVariable[] }>("variables", {
+      const res = dapSend<{ variables: DapVariable[] }>('variables', {
         variablesReference: ref,
       });
       return res?.body?.variables ?? [];
@@ -386,12 +463,13 @@ export function useExecution({
     selectedFrameId,
     scopes,
     debugLoading,
+    testState,
     run,
     stop,
     resume,
-    stepOver: () => step("next"),
-    stepIn: () => step("stepIn"),
-    stepOut: () => step("stepOut"),
+    stepOver: () => step('next'),
+    stepIn: () => step('stepIn'),
+    stepOut: () => step('stepOut'),
     selectFrame,
     expandVariable,
     applyBreakpoints,

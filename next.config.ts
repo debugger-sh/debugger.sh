@@ -11,6 +11,8 @@ import type { NextConfig } from 'next';
 const nextConfig: NextConfig = {
   output: 'export',
   images: { unoptimized: true },
+  // Keep the prebundled debugger-sh dist from being re-compiled oddly by Next.
+  transpilePackages: ['debugger-sh'],
   async headers() {
     return [
       {

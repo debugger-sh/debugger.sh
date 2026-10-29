@@ -91,7 +91,14 @@ template<class F> void expectNoError(F&& body, const char* file, int line, const
 #define STUDENT_TEST(name) SIMPLETEST_KEY("",name,"student")
 #define PROVIDED_TEST(name) SIMPLETEST_KEY("",name,"provided")
 #define EXPECT(expression,...) do { simpletest::expect(static_cast<bool>(expression),#expression,__FILE__,__LINE__,##__VA_ARGS__); } while(false)
-#define EXPECT_EQUAL(actual,expected,...) do { simpletest::expectEqual((actual),(expected),#actual,#expected,__FILE__,__LINE__,##__VA_ARGS__); } while(false)
+#define EXPECT_EQUAL(student, ...)                                                          \
+    do {                                                                                    \
+        auto _studentAnswer = (student);                                                    \
+        decltype(_studentAnswer) _referenceAnswer = __VA_ARGS__;                            \
+        simpletest::expectEqual(                                                            \
+            _studentAnswer, _referenceAnswer,                                               \
+            #student, #__VA_ARGS__, __FILE__, __LINE__);                                    \
+    } while (false)
 #define EXPECT_ERROR(statement,...) do { simpletest::expectError([&]() { statement; },__FILE__,__LINE__,#statement,##__VA_ARGS__); } while(false)
 #define EXPECT_NO_ERROR(statement,...) do { simpletest::expectNoError([&]() { statement; },__FILE__,__LINE__,#statement,##__VA_ARGS__); } while(false)
 #endif

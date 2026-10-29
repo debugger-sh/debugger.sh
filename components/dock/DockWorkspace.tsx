@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   type ReactNode,
@@ -9,8 +9,8 @@ import {
   useMemo,
   useRef,
   useState,
-} from 'react';
-import { createPortal } from 'react-dom';
+} from "react";
+import { createPortal } from "react-dom";
 import {
   DndContext,
   DragOverlay,
@@ -22,10 +22,10 @@ import {
   type DragEndEvent,
   type DragMoveEvent,
   type DragStartEvent,
-} from '@dnd-kit/core';
-import { Group, Panel, Separator } from 'react-resizable-panels';
+} from "@dnd-kit/core";
+import { Group, Panel, Separator } from "react-resizable-panels";
 
-import '../dock.css';
+import "../dock.css";
 import {
   closeTab,
   hitEdge,
@@ -34,8 +34,8 @@ import {
   setActive,
   setSplitSizes,
   splitLeaf,
-} from './ops';
-import { TabBar, insertIndexAtPointer, toMoveIndex } from './TabBar';
+} from "./ops";
+import { TabBar, insertIndexAtPointer, toMoveIndex } from "./TabBar";
 import {
   PANE_IDS,
   PANE_LABELS,
@@ -49,7 +49,7 @@ import {
   collectGroups,
   isTabGroup,
   visiblePanes,
-} from './types';
+} from "./types";
 
 export type DockWorkspaceProps = {
   panes: Record<PaneId, ReactNode>;
@@ -62,33 +62,39 @@ type DragPane = { pane: PaneId; groupId: string };
 type HoverTarget = {
   groupId: string;
   edge: DropEdge;
-  zone: 'tabbar' | 'body';
+  zone: "tabbar" | "body";
   /** Present when hovering a tab bar — visual insert slot. */
   insertIndex?: number;
 };
 
-type HighlightBox = { top: number; left: number; width: number; height: number };
+type HighlightBox = {
+  top: number;
+  left: number;
+  width: number;
+  height: number;
+};
 
-function regionForEdge(
-  leaf: DOMRect,
-  edge: DropEdge,
-): HighlightBox {
+function regionForEdge(leaf: DOMRect, edge: DropEdge): HighlightBox {
   const { top, left, width, height } = leaf;
   switch (edge) {
-    case 'left':
+    case "left":
       return { top, left, width: width / 2, height };
-    case 'right':
+    case "right":
       return { top, left: left + width / 2, width: width / 2, height };
-    case 'top':
+    case "top":
       return { top, left, width, height: height / 2 };
-    case 'bottom':
+    case "bottom":
       return { top: top + height / 2, left, width, height: height / 2 };
     default:
       return { top, left, width, height };
   }
 }
 
-export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWorkspaceProps) {
+export default function DockWorkspace({
+  panes,
+  layout,
+  onLayoutChange,
+}: DockWorkspaceProps) {
   const [drag, setDrag] = useState<DragPane | null>(null);
   const [hover, setHover] = useState<HoverTarget | null>(null);
   const [hostsVersion, setHostsVersion] = useState(0);
@@ -109,8 +115,8 @@ export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWor
     const move = (ev: PointerEvent) => {
       pointerRef.current = { x: ev.clientX, y: ev.clientY };
     };
-    window.addEventListener('pointermove', move);
-    return () => window.removeEventListener('pointermove', move);
+    window.addEventListener("pointermove", move);
+    return () => window.removeEventListener("pointermove", move);
   }, [drag]);
 
   const commit = useCallback((next: DockState) => {
@@ -121,18 +127,24 @@ export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWor
   const visibleCount = visiblePanes(layout).size;
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } })
   );
 
-  const registerBody = useCallback((groupId: string, el: HTMLElement | null) => {
-    if (el) bodyEls.current.set(groupId, el);
-    else bodyEls.current.delete(groupId);
-  }, []);
+  const registerBody = useCallback(
+    (groupId: string, el: HTMLElement | null) => {
+      if (el) bodyEls.current.set(groupId, el);
+      else bodyEls.current.delete(groupId);
+    },
+    []
+  );
 
-  const registerLeaf = useCallback((groupId: string, el: HTMLElement | null) => {
-    if (el) leafEls.current.set(groupId, el);
-    else leafEls.current.delete(groupId);
-  }, []);
+  const registerLeaf = useCallback(
+    (groupId: string, el: HTMLElement | null) => {
+      if (el) leafEls.current.set(groupId, el);
+      else leafEls.current.delete(groupId);
+    },
+    []
+  );
 
   const registerBar = useCallback((groupId: string, el: HTMLElement | null) => {
     if (el) tabBarEls.current.set(groupId, el);
@@ -147,7 +159,7 @@ export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWor
 
   const onDragStart = useCallback((e: DragStartEvent) => {
     const d = e.active.data.current;
-    if (d?.kind !== 'tab') return;
+    if (d?.kind !== "tab") return;
     setDrag({ pane: d.pane as PaneId, groupId: d.groupId as string });
   }, []);
 
@@ -159,33 +171,35 @@ export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWor
         return;
       }
       const data = over.data.current;
-      if (data?.kind === 'tabbar') {
+      if (data?.kind === "tabbar") {
         const groupId = data.groupId as string;
         const bar = tabBarEls.current.get(groupId);
         const insertIndex = bar
           ? insertIndexAtPointer(bar, pointerRef.current.x)
           : undefined;
-        setHover({ groupId, edge: 'center', zone: 'tabbar', insertIndex });
+        setHover({ groupId, edge: "center", zone: "tabbar", insertIndex });
         return;
       }
-      if (data?.kind === 'body') {
+      if (data?.kind === "body") {
         const groupId = data.groupId as string;
         const el = bodyEls.current.get(groupId);
         const rect = el?.getBoundingClientRect();
         let edge: DropEdge = rect
           ? hitEdge(pointerRef.current.x, pointerRef.current.y, rect)
-          : 'center';
+          : "center";
         // Singleton dragged over its own pane: edges are meaningless — always center.
         if (groupId === drag.groupId) {
-          const src = collectGroups(stateRef.current.root).find((g) => g.id === groupId);
-          if (src && src.tabs.length === 1) edge = 'center';
+          const src = collectGroups(stateRef.current.root).find(
+            (g) => g.id === groupId
+          );
+          if (src && src.tabs.length === 1) edge = "center";
         }
-        setHover({ groupId, edge, zone: 'body' });
+        setHover({ groupId, edge, zone: "body" });
         return;
       }
       setHover(null);
     },
-    [drag],
+    [drag]
   );
 
   const onDragEnd = useCallback(
@@ -198,32 +212,34 @@ export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWor
 
       const data = e.over.data.current;
       let groupId: string | null = null;
-      let edge: DropEdge = 'center';
+      let edge: DropEdge = "center";
       let insertIndex = currentHover?.insertIndex;
 
-      if (data?.kind === 'tabbar') {
+      if (data?.kind === "tabbar") {
         groupId = data.groupId as string;
-        edge = 'center';
+        edge = "center";
         const bar = tabBarEls.current.get(groupId);
         if (bar) insertIndex = insertIndexAtPointer(bar, pointerRef.current.x);
-      } else if (data?.kind === 'body') {
+      } else if (data?.kind === "body") {
         groupId = data.groupId as string;
         const el = bodyEls.current.get(groupId);
         const rect = el?.getBoundingClientRect();
         edge = rect
           ? hitEdge(pointerRef.current.x, pointerRef.current.y, rect)
           : currentHover?.groupId === groupId
-            ? currentHover.edge
-            : 'center';
+          ? currentHover.edge
+          : "center";
         if (groupId === active.groupId) {
-          const src = collectGroups(stateRef.current.root).find((g) => g.id === groupId);
-          if (src && src.tabs.length === 1) edge = 'center';
+          const src = collectGroups(stateRef.current.root).find(
+            (g) => g.id === groupId
+          );
+          if (src && src.tabs.length === 1) edge = "center";
         }
       }
       if (!groupId) return;
 
       const s = stateRef.current;
-      if (edge !== 'center') {
+      if (edge !== "center") {
         commit(splitLeaf(s, groupId, active.pane, edge));
         return;
       }
@@ -235,7 +251,7 @@ export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWor
           : undefined;
       commit(moveToGroup(s, active.pane, groupId, index));
     },
-    [drag, hover, commit],
+    [drag, hover, commit]
   );
 
   const onDragCancel = useCallback(() => {
@@ -266,14 +282,25 @@ export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWor
           registerLeaf={registerLeaf}
           registerBar={registerBar}
           registerHost={registerHost}
-          onSelect={(groupId, pane) => commit(setActive(stateRef.current, groupId, pane))}
-          onClose={(groupId, pane) => commit(closeTab(stateRef.current, groupId, pane))}
-          onOpen={(groupId, pane) => commit(openInGroup(stateRef.current, groupId, pane))}
+          onSelect={(groupId, pane) =>
+            commit(setActive(stateRef.current, groupId, pane))
+          }
+          onClose={(groupId, pane) =>
+            commit(closeTab(stateRef.current, groupId, pane))
+          }
+          onOpen={(groupId, pane) =>
+            commit(openInGroup(stateRef.current, groupId, pane))
+          }
           onSplitSizes={(splitId, sizes) =>
             commit(setSplitSizes(stateRef.current, splitId, sizes))
           }
         />
-        <DropHighlight rootRef={rootRef} leafEls={leafEls} hover={hover} dragging={Boolean(drag)} />
+        <DropHighlight
+          rootRef={rootRef}
+          leafEls={leafEls}
+          hover={hover}
+          dragging={Boolean(drag)}
+        />
         <div ref={setHoldEl} className="ide-pane-hold" aria-hidden />
         {PANE_IDS.map((pane) => {
           const host = activeHosts.current.get(pane) ?? holdEl;
@@ -282,8 +309,11 @@ export default function DockWorkspace({ panes, layout, onLayoutChange }: DockWor
       </div>
 
       <DragOverlay
-        style={{ cursor: 'grabbing' }}
-        dropAnimation={{ duration: 180, easing: 'cubic-bezier(0.16, 1, 0.3, 1)' }}
+        style={{ cursor: "grabbing" }}
+        dropAnimation={{
+          duration: 180,
+          easing: "cubic-bezier(0.16, 1, 0.3, 1)",
+        }}
       >
         {drag ? (
           <div className="ide-tab ide-tab-overlay" data-active="true">
@@ -307,14 +337,14 @@ function DropHighlight({
   dragging: boolean;
 }) {
   const [box, setBox] = useState<HighlightBox | null>(null);
-  const visible = Boolean(dragging && hover?.zone === 'body');
+  const visible = Boolean(dragging && hover?.zone === "body");
 
   useLayoutEffect(() => {
     if (!dragging) {
       setBox(null);
       return;
     }
-    if (!hover || hover.zone !== 'body') return;
+    if (!hover || hover.zone !== "body") return;
     const root = rootRef.current;
     const leaf = leafEls.current.get(hover.groupId);
     if (!root || !leaf) return;
@@ -334,8 +364,13 @@ function DropHighlight({
   return (
     <div
       className="ide-drop-overlay"
-      data-visible={visible ? 'true' : 'false'}
-      style={{ top: box.top, left: box.left, width: box.width, height: box.height }}
+      data-visible={visible ? "true" : "false"}
+      style={{
+        top: box.top,
+        left: box.left,
+        width: box.width,
+        height: box.height,
+      }}
       aria-hidden
     />
   );
@@ -375,7 +410,9 @@ function DockNodeView({
         group={node}
         closed={closed}
         canClose={visibleCount > 1}
-        insertIndex={overThis && hover.zone === 'tabbar' ? (hover.insertIndex ?? null) : null}
+        insertIndex={
+          overThis && hover.zone === "tabbar" ? hover.insertIndex ?? null : null
+        }
         registerBody={registerBody}
         registerLeaf={registerLeaf}
         registerBar={registerBar}
@@ -431,9 +468,9 @@ function SplitView({
   onOpen: (groupId: string, pane: PaneId) => void;
   onSplitSizes: (splitId: string, sizes: [number, number]) => void;
 }) {
-  const orientation = split.dir === 'h' ? 'horizontal' : 'vertical';
+  const orientation = split.dir === "h" ? "horizontal" : "vertical";
   /* 1px stroke — hover thickens via CSS, no gutter padding. */
-  const sepStyle = split.dir === 'h' ? { width: 1 } : { height: 1 };
+  const sepStyle = split.dir === "h" ? { width: 1 } : { height: 1 };
   const childProps = {
     closed,
     visibleCount,
@@ -464,7 +501,7 @@ function SplitView({
         if (a == null || b == null) return;
         onSplitSizes(split.id, [a, b]);
       }}
-      style={{ height: '100%', width: '100%', minHeight: 0, minWidth: 0 }}
+      style={{ height: "100%", width: "100%", minHeight: 0, minWidth: 0 }}
     >
       <Panel id={split.children[0].id} minSize="12%">
         <DockNodeView node={split.children[0]} {...childProps} />
@@ -504,7 +541,7 @@ function LeafGroup({
 }) {
   const { setNodeRef: setDropRef } = useDroppable({
     id: `body-${group.id}`,
-    data: { kind: 'body', groupId: group.id },
+    data: { kind: "body", groupId: group.id },
   });
 
   const hostRef = useRef<HTMLDivElement | null>(null);
@@ -514,14 +551,14 @@ function LeafGroup({
       setDropRef(el);
       registerBody(group.id, el);
     },
-    [setDropRef, registerBody, group.id],
+    [setDropRef, registerBody, group.id]
   );
 
   const setLeafRef = useCallback(
     (el: HTMLDivElement | null) => {
       registerLeaf(group.id, el);
     },
-    [registerLeaf, group.id],
+    [registerLeaf, group.id]
   );
 
   useEffect(() => {

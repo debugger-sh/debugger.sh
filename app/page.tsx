@@ -11,6 +11,11 @@ import { RunStopButton } from '@/components/SourceActions';
 import Terminal, { type TerminalHandle } from '@/components/Terminal';
 import { TestsPanel } from '@/components/TestsPanel';
 import { VariablesPanel } from '@/components/VariablesPanel';
+import {
+  adoptDockIds,
+  defaultDockState,
+  type DockState,
+} from '@/components/dock/types';
 import { useExecution } from '@/hooks/useExecution';
 import { getShare, isShareId } from '@/lib/share/api';
 import type { WorkspaceState } from '@/lib/share/types';
@@ -40,6 +45,8 @@ export default function Page() {
   const [sources, setSources] = useState<Record<Lang, string>>(initialSources);
   const [breakpointsByLang, setBreakpointsByLang] =
     useState<Record<Lang, Set<number>>>(initialBreakpoints);
+  const [layout, setLayout] = useState<DockState>(defaultDockState);
+  const [dockKey, setDockKey] = useState(0);
   const [shareReady, setShareReady] = useState(false);
   const terminalRef = useRef<TerminalHandle | null>(null);
   // Stable element identity so the xterm instance is not remounted on each IDE render.
@@ -70,8 +77,8 @@ export default function Page() {
   );
 
   const getShareState = useCallback(
-    (): WorkspaceState => ({ lang, code }),
-    [lang, code],
+    (): WorkspaceState => ({ lang, code, layout }),
+    [lang, code, layout],
   );
 
   useEffect(() => {
@@ -88,6 +95,11 @@ export default function Page() {
         if (cancelled || !state) return;
         setLang(state.lang);
         setSources((prev) => ({ ...prev, [state.lang]: state.code }));
+        if (state.layout) {
+          adoptDockIds(state.layout);
+          setLayout(state.layout);
+          setDockKey((k) => k + 1);
+        }
       } catch (err) {
         console.error('failed to load share', err);
       } finally {
@@ -102,6 +114,8 @@ export default function Page() {
 
   return (
     <main
+      className="ide-page"
+      data-loading={shareReady ? undefined : 'true'}
       style={{
         height: '100vh',
         padding: 16,
@@ -109,6 +123,7 @@ export default function Page() {
         display: 'flex',
         flexDirection: 'column',
         gap: 10,
+        position: 'relative',
       }}
     >
       <div className="ide-topbar">
@@ -124,6 +139,9 @@ export default function Page() {
         </div>
       </div>
       <ResizableWorkspace
+        key={dockKey}
+        layout={layout}
+        onLayoutChange={setLayout}
         panes={{
           editor: (
             <CodeEditor
@@ -155,6 +173,11 @@ export default function Page() {
           tests: <TestsPanel state={exec.testState} isRunning={exec.isRunning} />,
         }}
       />
+      {!shareReady && (
+        <div className="ide-boot-overlay" aria-busy="true" aria-label="Loading share">
+          <div className="ide-boot-spinner" />
+        </div>
+      )}
     </main>
   );
 }

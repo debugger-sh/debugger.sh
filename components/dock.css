@@ -655,3 +655,34 @@
   --error-border: rgba(239, 68, 68, 0.4);
   --error-text: #f5f5f5;
 }
+
+/* Share boot: blur the IDE while snapshot loads */
+.ide-page[data-loading='true'] > :not(.ide-boot-overlay) {
+  filter: blur(7px);
+  pointer-events: none;
+  user-select: none;
+}
+
+.ide-boot-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  display: grid;
+  place-items: center;
+  backdrop-filter: blur(2px);
+}
+
+.ide-boot-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid #404040;
+  border-top-color: #f5f5f5;
+  border-radius: 50%;
+  animation: ide-boot-spin 0.7s linear infinite;
+}
+
+@keyframes ide-boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

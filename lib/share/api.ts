@@ -1,4 +1,5 @@
 import { LANGS, type Lang } from '@/components/constants';
+import { parseDockState } from '@/components/dock/types';
 
 import { getSupabase } from './client';
 import { isShareId, shortId } from './id';
@@ -12,7 +13,10 @@ export function parseWorkspaceState(value: unknown): WorkspaceState | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as Record<string, unknown>;
   if (!isLang(record.lang) || typeof record.code !== 'string') return null;
-  return { lang: record.lang, code: record.code };
+  const layout = parseDockState(record.layout);
+  return layout
+    ? { lang: record.lang, code: record.code, layout }
+    : { lang: record.lang, code: record.code };
 }
 
 export async function createShare(state: WorkspaceState): Promise<string> {

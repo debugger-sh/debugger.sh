@@ -403,10 +403,24 @@ export function useExecution({
         if (testDecoderRef.current) {
           const rest = testDecoderRef.current.finish();
           if (rest) stdoutBufferRef.current += rest.replace(/\r?\n/g, '\r\n');
-          setTestState({
+          const nextState = {
             ...testDecoderRef.current.state,
             results: new Map(testDecoderRef.current.state.results),
-          });
+          };
+          const failuresExplainExit = [...nextState.results.values()].some(
+            (r) => r.status === 'failed' || r.status === 'errored',
+          );
+          const couldntRun =
+            result.type === 'error' ||
+            (result.type === 'completed' &&
+              result.exitCode !== 0 &&
+              !failuresExplainExit);
+          if (couldntRun) {
+            nextState.finished = true;
+            nextState.error =
+              "Couldn't run tests. Please see the Terminal for more info";
+          }
+          setTestState(nextState);
         }
         if (result.type === 'error') {
           stdoutBufferRef.current += `\r\n[ide error] ${result.error.type}: ${result.error.message}\r\n`;
@@ -430,6 +444,14 @@ export function useExecution({
         }
       } catch (err) {
         stdoutBufferRef.current += `\r\n[ide error] ${err instanceof Error ? err.message : String(err)}\r\n`;
+        if (testDecoderRef.current) {
+          setTestState({
+            ...testDecoderRef.current.state,
+            results: new Map(testDecoderRef.current.state.results),
+            finished: true,
+            error: "Couldn't run tests. Please see the Terminal for more info",
+          });
+        }
         if (typeof window !== 'undefined') {
           (
             window as Window & {

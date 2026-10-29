@@ -144,6 +144,11 @@
   overflow: hidden;
 }
 
+/* Author `display: flex` would otherwise override the UA [hidden] rule. */
+.ide-dock-pane[hidden] {
+  display: none;
+}
+
 .ide-dock-pane > * {
   flex: 1;
   min-height: 0;

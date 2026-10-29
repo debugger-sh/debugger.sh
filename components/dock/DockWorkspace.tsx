@@ -507,8 +507,6 @@ function LeafGroup({
     data: { kind: 'body', groupId: group.id },
   });
 
-  const hostRef = useRef<HTMLDivElement | null>(null);
-
   const setBodyRefs = useCallback(
     (el: HTMLDivElement | null) => {
       setDropRef(el);
@@ -524,13 +522,6 @@ function LeafGroup({
     [registerLeaf, group.id],
   );
 
-  useEffect(() => {
-    const el = hostRef.current;
-    if (!el) return;
-    registerHost(group.active, el);
-    return () => registerHost(group.active, null);
-  }, [group.active, registerHost]);
-
   return (
     <div ref={setLeafRef} className="ide-dock-leaf">
       <TabBar
@@ -544,8 +535,43 @@ function LeafGroup({
         onOpen={onOpen}
       />
       <div ref={setBodyRefs} className="ide-dock-body">
-        <div ref={hostRef} className="ide-dock-pane" data-active="true" />
+        {/* One stable host per tab so inactive panes (e.g. Terminal) stay
+            mounted when switching — swapping portal containers remounts. */}
+        {group.tabs.map((pane) => (
+          <PaneHost
+            key={pane}
+            pane={pane}
+            active={pane === group.active}
+            registerHost={registerHost}
+          />
+        ))}
       </div>
     </div>
+  );
+}
+
+function PaneHost({
+  pane,
+  active,
+  registerHost,
+}: {
+  pane: PaneId;
+  active: boolean;
+  registerHost: (pane: PaneId, el: HTMLElement | null) => void;
+}) {
+  const setRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      registerHost(pane, el);
+    },
+    [pane, registerHost],
+  );
+
+  return (
+    <div
+      ref={setRef}
+      className="ide-dock-pane"
+      data-active={active ? 'true' : 'false'}
+      hidden={!active}
+    />
   );
 }

@@ -1,5 +1,7 @@
 'use client';
 
+import type { ReactNode } from 'react';
+
 import type { TestInfo, TestResult, TestRunState } from '@/lib/testing/protocol';
 
 export type TestsPanelProps = {
@@ -12,9 +14,18 @@ export function TestsPanel({ state, isRunning }: TestsPanelProps) {
   const results = state?.results ?? new Map<string, TestResult>();
   const passed = [...results.values()].filter((r) => r.status === 'passed').length;
 
-  let status = 'Run the code to see which tests are passing';
+  let status: ReactNode = 'Run the code to see which tests are passing';
+  let statusColor = '#94a3b8';
   if (isRunning && !state?.finished) status = 'Running…';
-  else if (state?.terminated) status = state.terminated.message ?? state.terminated.reason;
+  else if (state?.error) {
+    statusColor = '#fca5a5';
+    status = (
+      <>
+        Couldn&apos;t run tests. Please see the{' '}
+        <span style={{ fontWeight: 600 }}>Terminal</span> for more info
+      </>
+    );
+  } else if (state?.terminated) status = state.terminated.message ?? state.terminated.reason;
   else if (state && tests.length) status = `${passed}/${tests.length} passed`;
 
   return (
@@ -30,7 +41,7 @@ export function TestsPanel({ state, isRunning }: TestsPanelProps) {
         fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
       }}
     >
-      <div style={{ padding: '8px 12px', color: '#94a3b8', borderBottom: '1px solid #1a1a1a' }}>
+      <div style={{ padding: '8px 12px', color: statusColor, borderBottom: '1px solid #1a1a1a' }}>
         {status}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', colorScheme: 'dark' }}>

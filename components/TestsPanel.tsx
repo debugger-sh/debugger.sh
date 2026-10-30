@@ -58,22 +58,30 @@ function TestRow({ test, result }: { test: TestInfo; result?: TestResult }) {
   const color =
     status === 'passed' ? '#34d399' : status === 'failed' || status === 'errored' ? '#f87171' : '#64748b';
   const mark = status === 'passed' ? '✓' : status === 'failed' || status === 'errored' ? '✗' : status === 'running' ? '…' : '·';
+  const failed = status === 'failed' || status === 'errored';
+  const failLine = result?.line ?? test.line;
 
   return (
-    <div style={{ padding: '6px 12px', borderLeft: `2px solid ${status === 'passed' || status === 'failed' || status === 'errored' ? color : 'transparent'}` }}>
+    <div style={{ padding: '6px 12px', borderLeft: `2px solid ${status === 'passed' || failed ? color : 'transparent'}` }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
         <span style={{ color, width: 12, flexShrink: 0 }}>{mark}</span>
         <span style={{ wordBreak: 'break-word' }}>{test.name}</span>
       </div>
-      {(status === 'failed' || status === 'errored') && result?.message && (
+      {failed && (result?.message || result?.actual || result?.expected) && (
         <div style={{ margin: '4px 0 0 20px', color: '#fca5a5', whiteSpace: 'pre-wrap' }}>
-          {result.message}
-          {result.actual && (
+          {result?.message && <div>{result.message}</div>}
+          {result?.actual && (
             <div>
+              {failLine != null && (
+                <>
+                  <span style={{ fontWeight: 700 }}>Line {failLine}</span>
+                  {': '}
+                </>
+              )}
               {result.actual.expression} = {result.actual.value}
             </div>
           )}
-          {result.expected && (
+          {result?.expected && (
             <div>
               expected {result.expected.expression} = {result.expected.value}
             </div>

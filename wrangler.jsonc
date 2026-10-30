@@ -9,7 +9,7 @@
 // Share links use /{id}; SPA not_found_handling serves index.html for those.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "ide",
+  "name": "debugger-sh",
   "compatibility_date": "2026-05-02",
   "assets": {
     "directory": "./out",

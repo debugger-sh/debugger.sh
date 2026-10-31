@@ -22,5 +22,6 @@ public/cs106b/*.pch
 public/cs106b/EnglishWords.dat
 public/cs106b/precompiled.json
 public/engine_bg.wasm
+public/assets/
 
 .env.production

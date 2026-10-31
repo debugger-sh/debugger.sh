@@ -1,10 +1,13 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 
-import { presentStanfordVariable, stanfordCollectionName } from '@/lib/stanford/formatters';
+import {
+  presentStanfordVariable,
+  stanfordCollectionName,
+} from "@/lib/stanford/formatters";
 
-import type { DapVariable } from './dap-types';
+import type { DapVariable } from "./dap-types";
 
 export type VariableRowProps = {
   variable: DapVariable;
@@ -20,7 +23,8 @@ export function VariableRow({ variable, expand, depth }: VariableRowProps) {
   // Once presented, only offer expand if there are logical children (empty → no chevron).
   const expandable =
     children !== null ? children.length > 0 : variable.variablesReference > 0;
-  const displayValue = summary ?? (stanfordName ? stanfordName : variable.value);
+  const displayValue =
+    summary ?? (stanfordName ? stanfordName : variable.value);
   const displayType = stanfordName ?? variable.type;
 
   // Re-present whenever the DAP variable identity changes (new pause / step).
@@ -56,32 +60,61 @@ export function VariableRow({ variable, expand, depth }: VariableRowProps) {
       <div
         onClick={toggle}
         style={{
-          display: 'flex',
-          alignItems: 'baseline',
+          display: "flex",
+          alignItems: "baseline",
           gap: 6,
-          padding: '2px 4px',
+          padding: "2px 4px",
           borderRadius: 2,
-          cursor: expandable ? 'pointer' : 'default',
+          cursor: expandable ? "pointer" : "default",
           minWidth: 0,
         }}
       >
-        <span style={{ width: 10, color: '#666', flexShrink: 0 }}>
-          {expandable ? (expanded ? '▾' : '▸') : ''}
+        <span style={{ width: 10, color: "#666", flexShrink: 0 }}>
+          {expandable ? (expanded ? "▾" : "▸") : ""}
         </span>
-        <span style={{ color: '#e5e5e5', flexShrink: 0 }}>{variable.name}</span>
+        <span
+          title={variable.name}
+          style={{
+            color: "#e5e5e5",
+            flexShrink: 0,
+            maxWidth: "40%",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {variable.name}
+        </span>
         {displayType && (
-          <span style={{ color: '#64748b', fontSize: 10, flexShrink: 0 }}>{displayType}</span>
+          <span
+            title={displayType}
+            style={{
+              color: "#64748b",
+              fontSize: 10,
+              // Yield width before the value: long C++ types ellipsize first.
+              flex: "1 1 0",
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {displayType}
+          </span>
         )}
         <span
           title={displayValue}
           style={{
-            color: '#94a3b8',
-            marginLeft: 'auto',
-            textAlign: 'right',
-            whiteSpace: 'nowrap',
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
+            color: "#94a3b8",
+            marginLeft: "auto",
+            textAlign: "right",
+            whiteSpace: "nowrap",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            // Prefer keeping the value visible; type truncates first.
+            flexShrink: 0,
             minWidth: 0,
+            maxWidth: "55%",
           }}
         >
           {displayValue}

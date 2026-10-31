@@ -28,6 +28,23 @@ function isSimpleTestHarnessFrame(frame: StackFrame): boolean {
   return false;
 }
 
+/** Normalize DAP / DWARF source paths for comparison with LANGS[*].sourcePath. */
+function normalizeSourcePath(path: string | undefined | null): string {
+  if (!path) return '';
+  let p = path.startsWith('file://') ? path.slice('file://'.length) : path;
+  p = p.replace(/\\/g, '/');
+  if (!p.startsWith('/')) p = `/${p}`;
+  return p;
+}
+
+/** True when the frame is the single editable main file (never library / harness). */
+function isMainSource(
+  path: string | undefined | null,
+  mainPath: string
+): boolean {
+  return normalizeSourcePath(path) === normalizeSourcePath(mainPath);
+}
+
 export type UseExecutionOptions = {
   terminalRef: React.RefObject<TerminalHandle | null>;
 };
@@ -84,6 +101,8 @@ export function useExecution({
   const testDecoderRef = useRef<ReturnType<typeof createTestReportDecoder> | null>(null);
   const testStateRafRef = useRef<number | null>(null);
   const stdoutBufferRef = useRef('');
+  /** Bumped on each `stopped` (and when auto-skipping library stops) so twin refreshes stay coherent. */
+  const debugRefreshGenRef = useRef(0);
   const getEngine = useCallback(async (lang: Lang): Promise<Engine> => {
     const existing = enginesRef.current[lang];
     if (existing) return existing;
@@ -151,32 +170,61 @@ export function useExecution({
     [dapSend]
   );
 
-  const refreshDebugSession = useCallback(() => {
-    setDebugLoading(true);
-    try {
-      const res = dapSend<{ stackFrames: StackFrame[] }>('stackTrace', {
-        threadId: 1,
-      });
-      if (!res?.success) return;
-      // Hide SimpleTest runner / harness frames when stopped inside a test.
-      const fs = (res.body?.stackFrames ?? []).filter((frame) => !isSimpleTestHarnessFrame(frame));
-      setFrames(fs);
-      if (fs.length === 0) {
-        setSelectedFrameId(null);
-        setStoppedLine(null);
-        setScopes([]);
-        return;
+  const refreshDebugSession = useCallback(
+    (expectedGen: number) => {
+      // Twin timeouts from scheduleDebugRefresh share one gen; skip stale ones.
+      if (expectedGen !== debugRefreshGenRef.current) return;
+      setDebugLoading(true);
+      try {
+        const res = dapSend<{ stackFrames: StackFrame[] }>('stackTrace', {
+          threadId: 1,
+        });
+        if (!res?.success) return;
+        if (expectedGen !== debugRefreshGenRef.current) return;
+
+        const raw = res.body?.stackFrames ?? [];
+        // Stack can lag the stopped event — leave the twin refresh to retry.
+        if (raw.length === 0) return;
+
+        const mainPath = LANGS[langRef.current].sourcePath;
+
+        // Just-my-code: never surface a pause whose PC is outside the main file
+        // (Stanford headers, libc++, SimpleTest harness, etc.).
+        if (!isMainSource(raw[0]?.source?.path, mainPath)) {
+          // Invalidate sibling refresh so we don't double-resume.
+          debugRefreshGenRef.current += 1;
+          // Return to the caller so step-through keeps going on the next main-file line.
+          dapSend('stepOut', { threadId: 1 });
+          setIsPaused(false);
+          setStoppedLine(null);
+          setFrames([]);
+          setSelectedFrameId(null);
+          setScopes([]);
+          return;
+        }
+
+        // Hide SimpleTest runner / harness frames when stopped inside a test.
+        const fs = raw.filter((frame) => !isSimpleTestHarnessFrame(frame));
+        setFrames(fs);
+        if (fs.length === 0) {
+          setSelectedFrameId(null);
+          setStoppedLine(null);
+          setScopes([]);
+          return;
+        }
+        setStoppedLine(fs[0].line);
+        setSelectedFrameId(fs[0].id);
+        loadFrame(fs[0].id);
+      } finally {
+        setDebugLoading(false);
       }
-      setStoppedLine(fs[0].line);
-      setSelectedFrameId(fs[0].id);
-      loadFrame(fs[0].id);
-    } finally {
-      setDebugLoading(false);
-    }
-  }, [dapSend, loadFrame]);
+    },
+    [dapSend, loadFrame]
+  );
 
   const scheduleDebugRefresh = useCallback(() => {
-    const run = () => refreshDebugSession();
+    const gen = debugRefreshGenRef.current;
+    const run = () => refreshDebugSession(gen);
     window.setTimeout(run, 0);
     window.setTimeout(run, 50);
   }, [refreshDebugSession]);
@@ -366,6 +414,7 @@ export function useExecution({
           if (m.event === 'initialized') {
             tryDapHandshake();
           } else if (m.event === 'stopped') {
+            debugRefreshGenRef.current += 1;
             setIsPaused(true);
             scheduleDebugRefresh();
           } else if (m.event === 'terminated') {

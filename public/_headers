@@ -7,3 +7,7 @@
 /*
   Cross-Origin-Embedder-Policy: require-corp
   Cross-Origin-Opener-Policy: same-origin
+
+/engine_bg.wasm
+  Content-Type: application/wasm
+  Cross-Origin-Resource-Policy: same-origin

@@ -17,7 +17,7 @@ The Next dev server sets COOP/COEP headers (see [next.config.ts](./next.config.t
 
 ### Share links (local Supabase)
 
-Sharing saves `{ lang, code }` to a local Supabase `shares` table (publishable key + RLS) and copies `/?s=<id>` (e.g. `http://localhost:3000/?s=Ab3xY9kQ2m`). Query params on `/` need no Cloudflare path rewrite — same static export deploy as today.
+Sharing saves `{ lang, code }` to a local Supabase `shares` table (publishable key + RLS) and copies `/{id}` (e.g. `http://localhost:3000/Ab3xY9kQ2m`). Cloudflare’s SPA fallback serves `index.html` for that path.
 
 ```bash
 # Requires Docker. Ports are offset (API 54421) so another local Supabase can coexist.
@@ -25,7 +25,7 @@ npx supabase start
 npx supabase status -o env
 ```
 
-Copy `API_URL` → `NEXT_PUBLIC_SUPABASE_URL` and `PUBLISHABLE_KEY` → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` into `.env.local` (see `.env.local.example`), then restart `npm run dev`. Click **Share** (top right) to copy `/?s=<id>`.
+Copy `API_URL` → `NEXT_PUBLIC_SUPABASE_URL` and `PUBLISHABLE_KEY` → `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` into `.env.local` (see `.env.local.example`), then restart `npm run dev`. Click **Share** (top right) to copy `/{id}`.
 
 ## CS106B / SimpleTest
 
@@ -37,7 +37,7 @@ Copy `API_URL` → `NEXT_PUBLIC_SUPABASE_URL` and `PUBLISHABLE_KEY` → `NEXT_PU
 ## Layout
 
 ```
-app/page.tsx              IDE + share load from `/?s=<id>`
+app/page.tsx              IDE + share load from `/{id}`
 hooks/useExecution.ts     runtime + DAP lifecycle; Stanford + SimpleTest wiring
 cs106b/                   Stanford sources + precompile script
 lib/simpletest/           SimpleTest.h/cpp + runner
@@ -66,7 +66,7 @@ Details: [engine integration guide — Presentation filtering](https://github.co
 
 ## Deploy
 
-Static Next export (`output: 'export'`) on Cloudflare Workers Static Assets. Share links are `/?s=<id>` (no Worker path rewrite).
+Static Next export (`output: 'export'`) on Cloudflare Workers Static Assets. Share links are `/{id}`; SPA `not_found_handling` serves `index.html`.
 
 **Schema:** connect the GitHub repo in the Supabase dashboard (Integration → GitHub). Migrations under `supabase/migrations/` apply when they land on the watched branch — no custom migrate workflow needed.
 

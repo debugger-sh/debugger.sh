@@ -17,7 +17,7 @@ import {
   type DockState,
 } from '@/components/dock/types';
 import { useExecution } from '@/hooks/useExecution';
-import { getShare, isShareId } from '@/lib/share/api';
+import { getShare } from '@/lib/share/api';
 import type { WorkspaceState } from '@/lib/share/types';
 
 function initialSources(): Record<Lang, string> {
@@ -30,14 +30,6 @@ function initialBreakpoints(): Record<Lang, Set<number>> {
   return Object.fromEntries(
     Object.keys(LANGS).map((lang) => [lang, new Set<number>()]),
   ) as Record<Lang, Set<number>>;
-}
-
-function shareIdFromLocation(): string | null {
-  const pathId = window.location.pathname.replace(/^\/+|\/+$/g, '');
-  if (pathId && isShareId(pathId)) return pathId;
-  // Legacy / local fallback: /?s=<id>
-  const queryId = new URLSearchParams(window.location.search).get('s');
-  return queryId && isShareId(queryId) ? queryId : null;
 }
 
 export default function Page() {
@@ -82,7 +74,7 @@ export default function Page() {
   );
 
   useEffect(() => {
-    const shareId = shareIdFromLocation();
+    const shareId = window.location.pathname.replace(/^\/+|\/+$/g, '');
     if (!shareId) {
       setShareReady(true);
       return;

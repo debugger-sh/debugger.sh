@@ -14,7 +14,7 @@ const nextConfig: NextConfig = {
   // Keep the prebundled debugger-sh dist from being re-compiled oddly by Next.
   transpilePackages: ["debugger-sh"],
   async rewrites() {
-    return [{ source: "/:shareId([0-9A-Za-z]{8,16})", destination: "/" }];
+    return [{ source: "/:path+", destination: "/" }];
   },
   async headers() {
     return [

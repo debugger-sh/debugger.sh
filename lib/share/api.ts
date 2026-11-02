@@ -2,7 +2,7 @@ import { LANGS, type Lang } from '@/components/constants';
 import { parseDockState } from '@/components/dock/types';
 
 import { getSupabase } from './client';
-import { isShareId, shortId } from './id';
+import { shortId } from './id';
 import type { WorkspaceState } from './types';
 
 function isLang(value: unknown): value is Lang {
@@ -30,9 +30,7 @@ export async function createShare(state: WorkspaceState): Promise<string> {
 }
 
 export async function getShare(id: string): Promise<WorkspaceState | null> {
-  if (!isShareId(id)) return null;
-
-  const { data, error } = await getSupabase()
+  const { data, error } = await getSupabase(id)
     .from('shares')
     .select('state')
     .eq('id', id)
@@ -45,5 +43,3 @@ export async function getShare(id: string): Promise<WorkspaceState | null> {
 export function shareUrl(id: string): string {
   return `${window.location.origin}/${id}`;
 }
-
-export { isShareId } from './id';

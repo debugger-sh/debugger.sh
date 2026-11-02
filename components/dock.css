@@ -34,13 +34,18 @@
 }
 
 /*
- * Separators: 1px stroke; hover/active grow a centered highlight via
- * transform so layout doesn’t shift. High z-index so the full strip
- * (tab bars + pane bodies) paints above dock chrome.
+ * Separators: 1px stroke. Hover ::before is a real 5px box (not scale-from-
+ * inset on the 1px stroke — that gets covered by sibling panes). It animates
+ * scale 0.2 → 1 (thin → 5px). Hitbox stays `resizeTargetMinimumSize.fine`
+ * 10px, wider than the highlight. Styles follow `data-separator` (library
+ * hit state). z-index above `.ide-tabbar` for one continuous bar.
+ *
+ * Hover/active rules must match `:not([data-separator="disabled"])`
+ * specificity or opacity stays 0 forever.
  */
 [data-separator]:not([data-separator="disabled"]) {
   position: relative;
-  z-index: 2;
+  z-index: 8;
   box-sizing: border-box;
   background: #1a1a1a;
 }
@@ -48,47 +53,65 @@
 [data-separator]:not([data-separator="disabled"])::before {
   content: "";
   position: absolute;
-  inset: 0;
-  background: rgba(59, 130, 246, 0.5);
+  background: rgba(59, 130, 246, 0.55);
   opacity: 0;
   pointer-events: none;
   transform-origin: center;
-  transition: opacity 0.12s ease, transform 0.12s ease, box-shadow 0.12s ease;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
+  transition: opacity 0.12s ease, transform 0.14s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-/* Vertical bar (left/right split): grow horizontally, full height. */
-[data-separator]:not([data-separator="disabled"])[aria-orientation="vertical"]::before {
-  transform: scaleX(1);
+/* 5px highlight box; start scaled down so hover grows outward. */
+[data-separator]:not(
+    [data-separator="disabled"]
+  )[aria-orientation="vertical"]::before {
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 5px;
+  margin-left: -2.5px;
+  transform: scaleX(0.2);
 }
 
-/* Horizontal bar (top/bottom split): grow vertically, full width. */
-[data-separator]:not([data-separator="disabled"])[aria-orientation="horizontal"]::before {
-  transform: scaleY(1);
+[data-separator]:not(
+    [data-separator="disabled"]
+  )[aria-orientation="horizontal"]::before {
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 5px;
+  margin-top: -2.5px;
+  transform: scaleY(0.2);
 }
 
-[data-separator]:not([data-separator="disabled"]):hover,
-[data-separator="active"],
-[data-separator="focus"] {
+/* Highlight only while hovering/dragging — not `focus` (library leaves
+   focus on the separator after a drag, which would pin the bar on). */
+[data-separator="hover"]:not([data-separator="disabled"]),
+[data-separator="active"]:not([data-separator="disabled"]) {
   z-index: 50;
 }
 
-[data-separator]:not([data-separator="disabled"]):hover::before,
-[data-separator="active"]::before,
-[data-separator="focus"]::before {
+[data-separator="hover"]:not([data-separator="disabled"])::before,
+[data-separator="active"]:not([data-separator="disabled"])::before {
   opacity: 1;
-  box-shadow: 0 0 12px rgba(59, 130, 246, 0.2);
 }
 
-[data-separator]:not([data-separator="disabled"])[aria-orientation="vertical"]:hover::before,
-[data-separator="active"][aria-orientation="vertical"]::before,
-[data-separator="focus"][aria-orientation="vertical"]::before {
-  transform: scaleX(5);
+[data-separator="hover"]:not(
+    [data-separator="disabled"]
+  )[aria-orientation="vertical"]::before,
+[data-separator="active"]:not(
+    [data-separator="disabled"]
+  )[aria-orientation="vertical"]::before {
+  transform: scaleX(1);
 }
 
-[data-separator]:not([data-separator="disabled"])[aria-orientation="horizontal"]:hover::before,
-[data-separator="active"][aria-orientation="horizontal"]::before,
-[data-separator="focus"][aria-orientation="horizontal"]::before {
-  transform: scaleY(5);
+[data-separator="hover"]:not(
+    [data-separator="disabled"]
+  )[aria-orientation="horizontal"]::before,
+[data-separator="active"]:not(
+    [data-separator="disabled"]
+  )[aria-orientation="horizontal"]::before {
+  transform: scaleY(1);
 }
 
 /* ---- Dock root / leaves ---- */
@@ -172,7 +195,7 @@
   overflow: hidden;
 }
 
-.ide-tabbar[data-drop-over='true'] {
+.ide-tabbar[data-drop-over="true"] {
   background: #152036;
 }
 
@@ -230,12 +253,12 @@
   background: #181818;
 }
 
-.ide-tab[data-active='true'] {
+.ide-tab[data-active="true"] {
   color: #f5f5f5;
   background: #0d0d0d;
 }
 
-.ide-tab[data-dragging='true'] {
+.ide-tab[data-dragging="true"] {
   opacity: 0.35;
 }
 
@@ -273,7 +296,7 @@
 }
 
 .ide-tab:hover .ide-tab-close,
-.ide-tab[data-active='true'] .ide-tab-close {
+.ide-tab[data-active="true"] .ide-tab-close {
   opacity: 1;
 }
 
@@ -355,15 +378,11 @@
   background: rgba(59, 130, 246, 0.1);
   box-shadow: inset 0 0 0 2px rgba(59, 130, 246, 0.75);
   opacity: 0;
-  transition:
-    top 0.2s ease,
-    left 0.2s ease,
-    width 0.2s ease,
-    height 0.2s ease,
+  transition: top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease,
     opacity 0.15s ease;
 }
 
-.ide-drop-overlay[data-visible='true'] {
+.ide-drop-overlay[data-visible="true"] {
   opacity: 1;
 }
 
@@ -495,7 +514,7 @@
   color: #f5f5f5;
 }
 
-.ide-lang-option[data-selected='true'] {
+.ide-lang-option[data-selected="true"] {
   color: #f5f5f5;
 }
 
@@ -644,7 +663,7 @@
   cursor: default;
 }
 
-.ide-share-btn[data-status='copied'] {
+.ide-share-btn[data-status="copied"] {
   color: #86efac;
   border-color: rgba(34, 197, 94, 0.35);
 }
@@ -668,7 +687,7 @@
   pointer-events: none;
 }
 
-.ide-share-icon[data-active='true'] {
+.ide-share-icon[data-active="true"] {
   opacity: 1;
   transform: scale(1);
 }
@@ -697,7 +716,7 @@
 }
 
 /* Share boot: blur the IDE while snapshot loads */
-.ide-page[data-loading='true'] > :not(.ide-boot-overlay) {
+.ide-page[data-loading="true"] > :not(.ide-boot-overlay) {
   filter: blur(7px);
   pointer-events: none;
   user-select: none;

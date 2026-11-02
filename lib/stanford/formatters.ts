@@ -71,11 +71,12 @@ function field(children: DapVariable[], name: string): DapVariable | undefined {
 }
 
 function summaryFor(adt: ADT, backingCount: number | undefined, shape?: { rows: number; columns: number }): string {
-  if (shape) return `Grid · ${shape.rows} × ${shape.columns}`;
-  if (adt === 'Stack') return `Stack · ${backingCount ?? '?'} (bottom → top)`;
-  if (adt === 'Queue' || adt === 'Deque') return `${adt} · ${backingCount ?? '?'} (front → back)`;
-  if (adt === 'PriorityQueue') return `PriorityQueue · ${backingCount ?? '?'}`;
-  if (backingCount !== undefined) return `${adt} · ${backingCount}`;
+  if (shape) return `Grid (${shape.rows}×${shape.columns})`;
+  const count = backingCount ?? '?';
+  if (adt === 'Stack') return `Stack (${count})`;
+  if (adt === 'Queue' || adt === 'Deque') return `${adt} (${count})`;
+  if (adt === 'PriorityQueue') return `PriorityQueue (${count})`;
+  if (backingCount !== undefined) return `${adt} (${backingCount})`;
   return adt;
 }
 

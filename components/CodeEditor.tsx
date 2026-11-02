@@ -11,6 +11,7 @@ import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { tags as t } from '@lezer/highlight';
 
 import { LANGS, type Lang } from '@/components/constants';
+import { telemetryEditor } from '@/lib/telemetry/editor';
 
 
 // ---------------------------------------------------------------------------
@@ -256,6 +257,7 @@ export default function CodeEditor(props: CodeEditorProps) {
       stoppedLineField,
       stoppedLineHighlight,
       makeLineGutter(toggleRef, breakpointsEnabled),
+      telemetryEditor(),
       syntaxHighlighting(codeSyntax),
       editorChrome,
     ],

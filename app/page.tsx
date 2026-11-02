@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import CodeEditor from '@/components/CodeEditor';
 import { LANGS, type Lang } from '@/components/constants';
@@ -19,6 +19,7 @@ import {
 import { useExecution } from '@/hooks/useExecution';
 import { getShare } from '@/lib/share/api';
 import type { WorkspaceState } from '@/lib/share/types';
+import { installTelemetry, Telemetry } from '@/lib/telemetry/client';
 
 function initialSources(): Record<Lang, string> {
   return Object.fromEntries(
@@ -47,31 +48,69 @@ export default function Page() {
 
   const code = sources[lang];
   const breakpoints = breakpointsByLang[lang];
+  const breakpointsRef = useRef(breakpoints);
+  breakpointsRef.current = breakpoints;
 
   const setCode = useCallback(
     (next: string) => setSources((prev) => ({ ...prev, [lang]: next })),
     [lang],
   );
 
+  const changeLanguage = useCallback(
+    (next: Lang) => {
+      if (next === lang) return;
+      Telemetry.log('edit', {
+        offset: 0,
+        deleted: sources[lang].length,
+        inserted: sources[next],
+        reason: 'language',
+        language: next,
+      });
+      setLang(next);
+    },
+    [lang, sources],
+  );
+
   const toggleBreakpoint = useCallback(
     (line: number) => {
       if (!LANGS[lang].debug) return;
-      setBreakpointsByLang((prev) => {
-        const current = prev[lang];
-        const next = new Set(current);
-        if (next.has(line)) next.delete(line);
-        else next.add(line);
-        exec.applyBreakpoints(next);
-        return { ...prev, [lang]: next };
-      });
+      const current = breakpointsRef.current;
+      const added = !current.has(line);
+      const next = new Set(current);
+      if (added) next.add(line);
+      else next.delete(line);
+      breakpointsRef.current = next;
+      Telemetry.log('debug_breakpoint', { line, added });
+      setBreakpointsByLang((prev) => ({ ...prev, [lang]: next }));
+      exec.applyBreakpoints(next);
     },
     [exec, lang],
   );
+
+  const onLayoutChange = useCallback((next: DockState) => {
+    setLayout(next);
+    Telemetry.log('layout_changed', { layout: next });
+  }, []);
 
   const getShareState = useCallback(
     (): WorkspaceState => ({ lang, code, layout }),
     [lang, code, layout],
   );
+
+  useLayoutEffect(() => installTelemetry(), []);
+
+  useLayoutEffect(() => {
+    if (!shareReady) return;
+    const shareId = window.location.pathname.replace(/^\/+|\/+$/g, '');
+    Telemetry.startSession({
+      language: lang,
+      code,
+      layout,
+      shareId: shareId || undefined,
+    });
+    // Session start reads the workspace as it became usable. Later edits are logged separately.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shareReady]);
 
   useEffect(() => {
     const shareId = window.location.pathname.replace(/^\/+|\/+$/g, '');
@@ -126,24 +165,26 @@ export default function Page() {
             onRun={() => void exec.run(code, breakpoints, lang)}
             onStop={exec.stop}
           />
-          <LanguageSelect value={lang} onChange={setLang} disabled={exec.isRunning} />
+          <LanguageSelect value={lang} onChange={changeLanguage} disabled={exec.isRunning} />
           <ShareButton getState={getShareState} />
         </div>
       </div>
       <ResizableWorkspace
         key={dockKey}
         layout={layout}
-        onLayoutChange={setLayout}
+        onLayoutChange={onLayoutChange}
         panes={{
-          editor: (
+          editor: shareReady ? (
             <CodeEditor
               lang={lang}
-              value={shareReady ? code : ''}
+              value={code}
               onChange={setCode}
               breakpoints={breakpoints}
               onToggleBreakpoint={toggleBreakpoint}
               stoppedLine={exec.stoppedLine}
             />
+          ) : (
+            <div />
           ),
           variables: (
             <VariablesPanel

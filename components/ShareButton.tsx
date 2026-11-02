@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 
 import { createShare, shareUrl } from '@/lib/share/api';
 import type { WorkspaceState } from '@/lib/share/types';
+import { Telemetry } from '@/lib/telemetry/client';
 
 type ShareButtonProps = {
   getState: () => WorkspaceState;
@@ -42,6 +43,7 @@ export function ShareButton({ getState }: ShareButtonProps) {
     setStatus('saving');
     try {
       const id = await createShare(getState());
+      Telemetry.log('share', { share_id: id });
       const url = shareUrl(id);
       const copied = await copyText(url);
       if (!copied) throw new Error('clipboard unavailable');

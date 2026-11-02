@@ -12,11 +12,15 @@ import type {
   StackFrame,
 } from '@/components/dap-types';
 import type { TerminalHandle } from '@/components/Terminal';
+import { toDebugFrame } from '@/lib/telemetry/map';
+import { Telemetry } from '@/lib/telemetry/client';
+import type { TestCase } from '@/lib/telemetry/types';
 import { loadStanfordArtifacts } from '@/lib/stanford/loadArtifacts';
 import { mergeDirNodes, pathsToDirNode } from '@/lib/stanford/fsTree';
 import { prepareCppRun } from '@/lib/testing/prepare';
 import {
   createTestReportDecoder,
+  type TestResult,
   type TestRunState,
 } from '@/lib/testing/protocol';
 
@@ -43,6 +47,42 @@ function isMainSource(
   mainPath: string
 ): boolean {
   return normalizeSourcePath(path) === normalizeSourcePath(mainPath);
+}
+
+type StopReason = 'breakpoint' | 'step' | 'exception' | 'pause';
+
+function mapStopReason(msg: unknown): StopReason {
+  const reason = (msg as { body?: { reason?: string } }).body?.reason ?? '';
+  if (reason === 'step') return 'step';
+  if (reason === 'exception') return 'exception';
+  if (reason === 'pause') return 'pause';
+  if (reason.includes('breakpoint')) return 'breakpoint';
+  return 'pause';
+}
+
+function testsFrom(decoder: { state: TestRunState } | null): TestCase[] | undefined {
+  if (!decoder) return undefined;
+  const { tests, results } = decoder.state;
+  if (tests.length === 0 && results.size === 0) return undefined;
+  const cases: TestCase[] = [];
+  const seen = new Set<string>();
+  const push = (name: string, result: TestResult | undefined, fallbackLine?: number) => {
+    const row: TestCase = { name, passed: result?.status === 'passed' };
+    if (result?.expected) row.expected = result.expected;
+    if (result?.actual) row.actual = result.actual;
+    const line = result?.line ?? fallbackLine;
+    if (line !== undefined) row.line = line;
+    if (result?.message) row.message = result.message;
+    cases.push(row);
+  };
+  for (const info of tests) {
+    seen.add(info.key);
+    push(info.name, results.get(info.key), info.line);
+  }
+  for (const result of results.values()) {
+    if (!seen.has(result.key)) push(result.key, result);
+  }
+  return cases;
 }
 
 export type UseExecutionOptions = {
@@ -103,6 +143,9 @@ export function useExecution({
   const stdoutBufferRef = useRef('');
   /** Bumped on each `stopped` (and when auto-skipping library stops) so twin refreshes stay coherent. */
   const debugRefreshGenRef = useRef(0);
+  const stopReasonRef = useRef<StopReason>('pause');
+  const autoSkipStopRef = useRef(false);
+  const emittedStopGenRef = useRef(-1);
   const getEngine = useCallback(async (lang: Lang): Promise<Engine> => {
     const existing = enginesRef.current[lang];
     if (existing) return existing;
@@ -156,7 +199,7 @@ export function useExecution({
   }, [dapSend, sendBreakpoints]);
 
   const loadFrame = useCallback(
-    (frameId: number) => {
+    (frameId: number): ScopeView[] => {
       const scopeRes = dapSend<{ scopes: Scope[] }>('scopes', { frameId });
       const list = scopeRes?.body?.scopes ?? [];
       const views: ScopeView[] = list.map((sc) => {
@@ -166,6 +209,7 @@ export function useExecution({
         return { name: sc.name, variables: v?.body?.variables ?? [] };
       });
       setScopes(views);
+      return views;
     },
     [dapSend]
   );
@@ -193,6 +237,8 @@ export function useExecution({
         if (!isMainSource(raw[0]?.source?.path, mainPath)) {
           // Invalidate sibling refresh so we don't double-resume.
           debugRefreshGenRef.current += 1;
+          // Keep the original stop reason across the automatic step-out.
+          autoSkipStopRef.current = true;
           // Return to the caller so step-through keeps going on the next main-file line.
           dapSend('stepOut', { threadId: 1 });
           setIsPaused(false);
@@ -214,7 +260,17 @@ export function useExecution({
         }
         setStoppedLine(fs[0].line);
         setSelectedFrameId(fs[0].id);
-        loadFrame(fs[0].id);
+        const views = loadFrame(fs[0].id);
+        if (emittedStopGenRef.current !== expectedGen) {
+          emittedStopGenRef.current = expectedGen;
+          const line = fs[0].line;
+          Telemetry.log('debug_stop', {
+            reason: stopReasonRef.current,
+            ...(line > 0 ? { line } : {}),
+            frame_count: fs.length,
+            top_frame: toDebugFrame(0, fs[0].name, views),
+          });
+        }
       } finally {
         setDebugLoading(false);
       }
@@ -250,16 +306,18 @@ export function useExecution({
 
   const wireStdout = useCallback(
     (rt: Engine) => {
-      const decoder = new TextDecoder();
+      const stdoutDecoder = new TextDecoder();
+      const stderrDecoder = new TextDecoder();
       // Buffer program output and flush via terminalRef on each chunk. Reading
       // the ref at write-time avoids a stale xterm handle if React remounts the
       // terminal while the run is in flight.
-      const onData = (chunk: Uint8Array) => {
+      const onData = (kind: 'stdout' | 'stderr', decoder: TextDecoder) => (chunk: Uint8Array) => {
         const text = decoder.decode(chunk);
         const filtered = testDecoderRef.current
           ? testDecoderRef.current.push(text)
           : text;
         if (filtered) {
+          Telemetry.log('run_io', { kind, data: filtered });
           // Keep a durable copy — xterm can remount when the Tests panel
           // updates, which would otherwise drop live writes.
           stdoutBufferRef.current += filtered.replace(/\r?\n/g, '\r\n');
@@ -279,11 +337,13 @@ export function useExecution({
           }
         }
       };
-      rt.stdout.on('data', onData);
-      rt.stderr.on('data', onData);
+      const onStdout = onData('stdout', stdoutDecoder);
+      const onStderr = onData('stderr', stderrDecoder);
+      rt.stdout.on('data', onStdout);
+      rt.stderr.on('data', onStderr);
       ioCleanupRef.current = () => {
-        rt.stdout.off('data', onData);
-        rt.stderr.off('data', onData);
+        rt.stdout.off('data', onStdout);
+        rt.stderr.off('data', onStderr);
       };
     },
     [terminalRef]
@@ -297,6 +357,7 @@ export function useExecution({
       let buffer = '';
       stdinDisposeRef.current = term.onData((data) => {
         if (!isRunningRef.current) return;
+        Telemetry.log('run_io', { kind: 'stdin', data });
         if (data === '\x03') {
           term.write('^C\r\n');
           rt.stop();
@@ -337,6 +398,13 @@ export function useExecution({
   const run = useCallback(
     async (code: string, breakpoints: ReadonlySet<number>, lang: Lang) => {
       if (isRunningRef.current) return;
+      Telemetry.log('run_start');
+      let finish: {
+        reason: 'completed' | 'error' | 'stopped';
+        exit_code?: number;
+        build_ms?: number;
+        run_ms?: number;
+      } = { reason: 'error' };
       const started = performance.now();
       langRef.current = lang;
       const { fsKey } = LANGS[lang];
@@ -414,6 +482,8 @@ export function useExecution({
           if (m.event === 'initialized') {
             tryDapHandshake();
           } else if (m.event === 'stopped') {
+            if (!autoSkipStopRef.current) stopReasonRef.current = mapStopReason(msg);
+            autoSkipStopRef.current = false;
             debugRefreshGenRef.current += 1;
             setIsPaused(true);
             scheduleDebugRefresh();
@@ -449,9 +519,24 @@ export function useExecution({
         }
 
         const result = await runPromise;
+        if (result.type === 'completed') {
+          finish = {
+            reason: 'completed',
+            exit_code: result.exitCode,
+            build_ms: Math.round(result.timing.buildMs),
+            run_ms: Math.round(result.timing.runMs),
+          };
+        } else if (result.type === 'stopped') {
+          finish = { reason: 'stopped' };
+        } else {
+          finish = { reason: 'error' };
+        }
         if (testDecoderRef.current) {
           const rest = testDecoderRef.current.finish();
-          if (rest) stdoutBufferRef.current += rest.replace(/\r?\n/g, '\r\n');
+          if (rest) {
+            Telemetry.log('run_io', { kind: 'stdout', data: rest });
+            stdoutBufferRef.current += rest.replace(/\r?\n/g, '\r\n');
+          }
           const nextState = {
             ...testDecoderRef.current.state,
             results: new Map(testDecoderRef.current.state.results),
@@ -513,6 +598,11 @@ export function useExecution({
           };
         }
       } finally {
+        const tests = testsFrom(testDecoderRef.current);
+        Telemetry.log('run_stop', {
+          ...finish,
+          ...(tests && tests.length ? { tests } : {}),
+        });
         const ms = Math.round(performance.now() - started);
         const term = terminalRef.current;
         if (term) {
@@ -547,6 +637,7 @@ export function useExecution({
 
   const resume = useCallback(() => {
     if (!isRunningRef.current) return;
+    Telemetry.log('debug_step', { kind: 'continue' });
     dapSend('continue', { threadId: 1 });
     setIsPaused(false);
     setStoppedLine(null);
@@ -558,6 +649,9 @@ export function useExecution({
   const step = useCallback(
     (command: 'next' | 'stepIn' | 'stepOut') => {
       if (!isRunningRef.current) return;
+      Telemetry.log('debug_step', {
+        kind: command === 'next' ? 'over' : command === 'stepIn' ? 'in' : 'out',
+      });
       setDebugLoading(true);
       setScopes([]);
       setFrames([]);
@@ -569,9 +663,12 @@ export function useExecution({
   const selectFrame = useCallback(
     (id: number) => {
       setSelectedFrameId(id);
-      loadFrame(id);
+      const views = loadFrame(id);
+      const index = frames.findIndex((frame) => frame.id === id);
+      const frame = index >= 0 ? frames[index] : undefined;
+      if (frame) Telemetry.log('debug_frame', { frame: toDebugFrame(index, frame.name, views) });
     },
-    [loadFrame]
+    [frames, loadFrame]
   );
 
   const expandVariable = useCallback(

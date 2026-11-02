@@ -8,6 +8,8 @@ import {
 } from "@/lib/stanford/formatters";
 
 import type { DapVariable } from "./dap-types";
+import { toDebugVariable } from "@/lib/telemetry/map";
+import { Telemetry } from "@/lib/telemetry/client";
 
 export type VariableRowProps = {
   variable: DapVariable;
@@ -43,16 +45,24 @@ export function VariableRow({ variable, expand, depth }: VariableRowProps) {
 
   const toggle = () => {
     if (!expandable) return;
-    if (!expanded && children === null && variable.variablesReference > 0) {
+    const next = !expanded;
+    let revealed = children;
+    if (next && revealed === null && variable.variablesReference > 0) {
       const presented = presentStanfordVariable(variable, expand);
       if (presented) {
         setSummary(presented.summary);
-        setChildren(presented.children);
+        revealed = presented.children;
       } else {
-        setChildren(expand(variable.variablesReference));
+        revealed = expand(variable.variablesReference);
       }
+      setChildren(revealed);
     }
-    setExpanded((e) => !e);
+    Telemetry.log("debug_variable", {
+      id: toDebugVariable(variable).id,
+      expanded: next,
+      ...(next ? { children: (revealed ?? []).map(toDebugVariable) } : {}),
+    });
+    setExpanded(next);
   };
 
   return (

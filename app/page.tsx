@@ -216,7 +216,7 @@ export default function Page() {
 }
 
 const Logo = () => (
-  <a href="https://github.com/debugger-sh/debugger.sh" target="_blank" rel="noreferrer" style={{ padding: '0 4px', fontSize: 12, color: '#6b7280', letterSpacing: '0.02em', userSelect: 'none', textDecoration: 'none' }}>
+  <a href="https://github.com/debugger-sh/debugger.sh" target="_blank" rel="noreferrer" style={{ fontSize: 12, color: '#6b7280', letterSpacing: '0.02em', userSelect: 'none', textDecoration: 'none' }}>
     debugger<span style={{ color: '#ef4444' }}>.</span>sh
   </a>
 );

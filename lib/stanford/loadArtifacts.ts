@@ -5,7 +5,6 @@
 
 import { artifactHashes } from '@/cs106b/generated/precompiled';
 import { stanfordHeaders } from '@/cs106b/generated/headers';
-import { SIMPLETEST_H } from '@/lib/simpletest/embedded';
 import type { CppArtifacts } from 'debugger-sh';
 
 export type StanfordRuntimeInputs = {
@@ -45,8 +44,7 @@ export function loadStanfordArtifacts(mode: 'run' | 'debug'): Promise<StanfordRu
       ]);
       return {
         // Headers stay as text FS nodes so `#include "map.h"` / `"SimpleTest.h"` work.
-        // SimpleTest is treated as part of the Stanford support surface.
-        fsFiles: { ...stanfordHeaders, 'SimpleTest.h': SIMPLETEST_H },
+        fsFiles: stanfordHeaders,
         binaryFiles: {
           [`/__cs106b/${archiveName}`]: archive,
           '/__cs106b/support.pch': pch,

@@ -83,6 +83,16 @@ template<class F> void expectNoError(F&& body, const char* file, int line, const
     catch (const std::exception& e) { fail(message.empty() ? std::string("EXPECT_NO_ERROR: ") + e.what() : message, file, line, expression); }
     catch (...) { fail(message.empty() ? "EXPECT_NO_ERROR: an exception was thrown" : message, file, line, expression); }
 }
+// Copies the student value, then list-initializes the reference as that same
+// type. Both happen in this type's functions so EXPECT_EQUAL itself declares
+// no locals — locals declared in the macro show up in the debugger.
+template<class T> struct ExpectEqual {
+    T value;
+    [[gnu::noinline]] explicit ExpectEqual(T student) : value(std::move(student)) {}
+    [[gnu::noinline]] void with(T reference, const char* studentExpression, const char* referenceExpression, const char* file, int line) const {
+        expectEqual(value, reference, studentExpression, referenceExpression, file, line);
+    }
+};
 }
 #define SIMPLETEST_JOIN_IMPL(a,b) a##b
 #define SIMPLETEST_JOIN(a,b) SIMPLETEST_JOIN_IMPL(a,b)
@@ -93,11 +103,11 @@ template<class F> void expectNoError(F&& body, const char* file, int line, const
 #define EXPECT(expression,...) do { simpletest::expect(static_cast<bool>(expression),#expression,__FILE__,__LINE__,##__VA_ARGS__); } while(false)
 #define EXPECT_EQUAL(student, ...)                                                          \
     do {                                                                                    \
-        auto _studentAnswer = (student);                                                    \
-        decltype(_studentAnswer) _referenceAnswer = __VA_ARGS__;                            \
-        simpletest::expectEqual(                                                            \
-            _studentAnswer, _referenceAnswer,                                               \
-            #student, #__VA_ARGS__, __FILE__, __LINE__);                                    \
+        _Pragma("clang diagnostic push")                                                    \
+        _Pragma("clang diagnostic ignored \"-Wbraced-scalar-init\"")                       \
+        simpletest::ExpectEqual<std::decay_t<decltype((student))>>((student)).with(        \
+            __VA_ARGS__, #student, #__VA_ARGS__, __FILE__, __LINE__);                      \
+        _Pragma("clang diagnostic pop")                                                     \
     } while (false)
 #define EXPECT_ERROR(statement,...) do { simpletest::expectError([&]() { statement; },__FILE__,__LINE__,#statement,##__VA_ARGS__); } while(false)
 #define EXPECT_NO_ERROR(statement,...) do { simpletest::expectNoError([&]() { statement; },__FILE__,__LINE__,#statement,##__VA_ARGS__); } while(false)

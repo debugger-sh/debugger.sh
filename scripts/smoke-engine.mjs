@@ -14,8 +14,8 @@ const debugA = await readFile(join(root, 'public/cs106b/debug.a'));
 const pch = await readFile(join(root, 'public/cs106b/support.pch'));
 const dictionary = await readFile(join(root, 'public/cs106b/EnglishWords.dat'));
 const { stanfordHeaders } = await import(pathToFileURL(join(root, 'cs106b/generated/headers.ts')).href);
-const { SIMPLETEST_H, SIMPLETEST_RUNNER } = await import(
-  pathToFileURL(join(root, 'lib/simpletest/embedded.ts')).href
+const { simpleTestRunner } = await import(
+  pathToFileURL(join(root, 'cs106b/generated/simpleTestRunner.ts')).href
 );
 
 const nonce = 'a'.repeat(32);
@@ -49,7 +49,7 @@ const config = `#define SIMPLETEST_NONCE "${nonce}"
 #define DEBUGGER_HAS_USER_MAIN 1
 `;
 
-const runnerBody = SIMPLETEST_RUNNER.replace(/^#include\s+"SimpleTest(?:_config)?\.h"\s*\n/gm, '');
+const runnerBody = simpleTestRunner.replace(/^#include\s+"SimpleTest(?:_config)?\.h"\s*\n/gm, '');
 
 function buildFs() {
   const files = {
@@ -61,7 +61,6 @@ function buildFs() {
       '#include "SimpleTest_config.h"',
       runnerBody,
     ].join('\n'),
-    'SimpleTest.h': SIMPLETEST_H,
     'SimpleTest_config.h': config,
   };
   const rootFs = {};

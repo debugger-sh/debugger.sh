@@ -7,7 +7,7 @@
  * This module only rewrites + injects the runner when live tests are present.
  */
 
-import { SIMPLETEST_RUNNER } from '@/lib/simpletest/embedded';
+import { simpleTestRunner } from '@/cs106b/generated/simpleTestRunner';
 
 export type PreparedCppRun = {
   /** Files to merge into engine.fs (besides Stanford headers / student main). */
@@ -288,7 +288,7 @@ export function prepareCppRun(studentSource: string, studentPath = 'main.c'): Pr
   // Fold the tiny runner into the student TU. SimpleTest.cpp lives in the
   // precompiled CS106B archive (run.a / debug.a), so a test run is one clang
   // invocation instead of three — the engine reloads ~75MB clang wasm per file.
-  const runnerBody = SIMPLETEST_RUNNER.replace(/^#include\s+"SimpleTest(?:_config)?\.h"\s*\n/gm, '');
+  const runnerBody = simpleTestRunner.replace(/^#include\s+"SimpleTest(?:_config)?\.h"\s*\n/gm, '');
   const preparedSource = [
     '#pragma clang diagnostic push',
     '#pragma clang diagnostic ignored "-Wreturn-type"',

@@ -8,29 +8,28 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-const embedded = readFileSync(join(root, 'lib/simpletest/embedded.ts'), 'utf8');
-assert.match(embedded, /SIMPLETEST_H/);
-assert.match(embedded, /PROVIDED_TEST/);
-assert.match(embedded, /original_main/);
-assert.doesNotMatch(embedded, /debugger_hidden_main/);
-
-const cpp = readFileSync(join(root, 'lib/simpletest/SimpleTest.cpp'), 'utf8');
+const cpp = readFileSync(join(root, 'cs106b/cpp/src/SimpleTest.cpp'), 'utf8');
 assert.match(cpp, /__SIMPLETEST_V1__/);
 // emit must not print a leading blank line before each marker
 assert.doesNotMatch(cpp, /printf\("\\n__SIMPLETEST/);
 
-const header = readFileSync(join(root, 'lib/simpletest/SimpleTest.h'), 'utf8');
+const header = readFileSync(join(root, 'cs106b/cpp/include/SimpleTest.h'), 'utf8');
 assert.match(header, /#define PROVIDED_TEST/);
 assert.match(header, /#define STUDENT_TEST/);
 assert.match(header, /#define EXPECT_EQUAL/);
 
-const runner = readFileSync(join(root, 'lib/simpletest/SimpleTest_runner.cpp'), 'utf8');
+const runner = readFileSync(join(root, 'cs106b/cpp/SimpleTest_runner.cpp'), 'utf8');
 assert.match(runner, /original_main/);
 assert.match(runner, /simpletest::run/);
+assert.doesNotMatch(runner, /debugger_hidden_main/);
+
+const generatedRunner = readFileSync(join(root, 'cs106b/generated/simpleTestRunner.ts'), 'utf8');
+assert.match(generatedRunner, /simpleTestRunner/);
+assert.match(generatedRunner, /original_main/);
 
 const loadArtifacts = readFileSync(join(root, 'lib/stanford/loadArtifacts.ts'), 'utf8');
-assert.match(loadArtifacts, /SimpleTest\.h/);
-assert.match(loadArtifacts, /SIMPLETEST_H/);
+assert.match(loadArtifacts, /stanfordHeaders/);
+assert.doesNotMatch(loadArtifacts, /SIMPLETEST_H/);
 
 const prepare = readFileSync(join(root, 'lib/testing/prepare.ts'), 'utf8');
 assert.match(prepare, /original_main/);

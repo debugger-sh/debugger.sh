@@ -4,6 +4,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
+    "postinstall": "node scripts/postinstall.mjs",
     "predev": "npm run build:cs106b && npm run copy:engine-wasm",
     "dev": "next dev",
     "prebuild": "npm run build:cs106b && npm run copy:engine-wasm",

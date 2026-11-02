@@ -182,6 +182,8 @@ export default function Page() {
               breakpoints={breakpoints}
               onToggleBreakpoint={toggleBreakpoint}
               stoppedLine={exec.stoppedLine}
+              revealSeq={exec.revealSeq}
+              revealFlash={exec.revealFlash}
             />
           ) : (
             <div />

@@ -103,6 +103,16 @@ const editorChrome = EditorView.theme(
     },
     '.cm-gutterElement:hover': { backgroundColor: theme.gutter.hoverBg },
     '.cm-stopped-line': { backgroundColor: theme.stoppedLine },
+    // Two classes so this wins over the gutter hover rule above.
+    '.cm-gutterElement.cm-stopped-gutter': { backgroundColor: theme.stoppedLine },
+    // Extra pulse on top of the steady highlight. The class is added when
+    // execution arrives at a line and removed from the steady-state decoration
+    // so the animation can replay on the next stop.
+    '.cm-stopped-flash': { animation: 'cm-stop-flash 620ms ease-out' },
+    '@keyframes cm-stop-flash': {
+      '0%': { boxShadow: 'inset 0 0 0 999px rgba(251, 191, 36, 0.55)' },
+      '100%': { boxShadow: 'inset 0 0 0 999px rgba(251, 191, 36, 0)' },
+    },
   },
   { dark: true },
 );
@@ -142,15 +152,23 @@ const breakpointsField = StateField.define<ReadonlySet<number>>({
 // One combined gutter row: hole/dot on the left, line number on the right
 // (matches the original textarea-era Gutter component layout).
 class LineGutterMarker extends GutterMarker {
-  constructor(readonly lineNumber: number, readonly hasBreakpoint: boolean) {
+  constructor(
+    readonly lineNumber: number,
+    readonly hasBreakpoint: boolean,
+    readonly stopped = false,
+    readonly flash = false,
+  ) {
     super();
+    if (stopped) this.elementClass = flash ? 'cm-stopped-gutter cm-stopped-flash' : 'cm-stopped-gutter';
   }
 
   eq(other: GutterMarker): boolean {
     return (
       other instanceof LineGutterMarker &&
       other.lineNumber === this.lineNumber &&
-      other.hasBreakpoint === this.hasBreakpoint
+      other.hasBreakpoint === this.hasBreakpoint &&
+      other.stopped === this.stopped &&
+      other.flash === this.flash
     );
   }
 
@@ -190,11 +208,17 @@ function makeLineGutter(
       const lineNumber = view.state.doc.lineAt(line.from).number;
       const hasBreakpoint =
         breakpointsEnabled && view.state.field(breakpointsField).has(lineNumber);
-      return new LineGutterMarker(lineNumber, hasBreakpoint);
+      const stop = view.state.field(stoppedLineField);
+      const stopped = stop.line === lineNumber;
+      return new LineGutterMarker(lineNumber, hasBreakpoint, stopped, stopped && stop.flash > 0);
     },
-    lineMarkerChange: (update) =>
-      update.docChanged ||
-      update.startState.field(breakpointsField) !== update.state.field(breakpointsField),
+    lineMarkerChange: (update) => {
+      if (update.docChanged) return true;
+      if (update.startState.field(breakpointsField) !== update.state.field(breakpointsField)) return true;
+      const prev = update.startState.field(stoppedLineField);
+      const next = update.state.field(stoppedLineField);
+      return prev.line !== next.line || prev.flash !== next.flash;
+    },
     // Spacer sized for up to 4-digit line numbers; gutter grows past this if needed.
     initialSpacer: () => new LineGutterMarker(9999, false),
     domEventHandlers: breakpointsEnabled
@@ -212,10 +236,16 @@ function makeLineGutter(
 // Stopped-line highlight
 // ---------------------------------------------------------------------------
 
-const setStoppedLineEffect = StateEffect.define<number | null>();
+type StopHighlight = {
+  line: number | null;
+  /** Non-zero while the arrival flash should play. A new value restarts it. */
+  flash: number;
+};
 
-const stoppedLineField = StateField.define<number | null>({
-  create: () => null,
+const setStoppedLineEffect = StateEffect.define<StopHighlight>();
+
+const stoppedLineField = StateField.define<StopHighlight>({
+  create: () => ({ line: null, flash: 0 }),
   update(value, tr) {
     for (const e of tr.effects) if (e.is(setStoppedLineEffect)) value = e.value;
     return value;
@@ -223,12 +253,62 @@ const stoppedLineField = StateField.define<number | null>({
 });
 
 const stoppedLineHighlight = EditorView.decorations.compute([stoppedLineField], (state) => {
-  const ln = state.field(stoppedLineField);
-  if (ln == null || ln < 1 || ln > state.doc.lines) return Decoration.none;
+  const { line, flash } = state.field(stoppedLineField);
+  if (line == null || line < 1 || line > state.doc.lines) return Decoration.none;
+  const cls = flash > 0 ? 'cm-stopped-line cm-stopped-flash' : 'cm-stopped-line';
   return Decoration.set([
-    Decoration.line({ attributes: { class: 'cm-stopped-line' } }).range(state.doc.line(ln).from),
+    Decoration.line({ attributes: { class: cls } }).range(state.doc.line(line).from),
   ]);
 });
+
+function stopHighlight(line: number | null, flash = 0): StopHighlight {
+  return { line, flash };
+}
+
+/**
+ * Center `line` in the editor. Resolves immediately when the line is already
+ * centered (or the file fits without scrolling). `onDone` runs once the smooth
+ * scroll finishes so the arrival flash plays on the visible line.
+ */
+function scrollLineIntoView(view: EditorView, line: number, onDone: () => void): () => void {
+  if (line < 1 || line > view.state.doc.lines) return () => {};
+  const scroller = view.scrollDOM;
+  const height = scroller.clientHeight;
+  if (height <= 0) {
+    onDone();
+    return () => {};
+  }
+  const block = view.lineBlockAt(view.state.doc.line(line).from);
+  const max = Math.max(0, scroller.scrollHeight - height);
+  const target = Math.min(max, Math.max(0, block.top - (height - block.height) / 2));
+  if (Math.abs(target - scroller.scrollTop) <= 1) {
+    onDone();
+    return () => {};
+  }
+  const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) {
+    scroller.scrollTop = target;
+    onDone();
+    return () => {};
+  }
+
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    scroller.removeEventListener('scrollend', finish);
+    window.clearTimeout(timer);
+    onDone();
+  };
+  scroller.addEventListener('scrollend', finish);
+  const timer = window.setTimeout(finish, 900);
+  scroller.scrollTo({ top: target, behavior: 'smooth' });
+  return () => {
+    finished = true;
+    scroller.removeEventListener('scrollend', finish);
+    window.clearTimeout(timer);
+  };
+}
 
 // ---------------------------------------------------------------------------
 // Component
@@ -241,6 +321,13 @@ export type CodeEditorProps = {
   breakpoints: Set<number>;
   onToggleBreakpoint: (line: number) => void;
   stoppedLine: number | null;
+  /**
+   * Bumped on each debugger stop and each in-document stack-frame selection,
+   * including when the line number did not change.
+   */
+  revealSeq: number;
+  /** Flash the line only for a debugger stop, not a stack-frame selection. */
+  revealFlash: boolean;
 };
 
 export default function CodeEditor(props: CodeEditorProps) {
@@ -278,13 +365,57 @@ export default function CodeEditor(props: CodeEditorProps) {
       props.stoppedLine <= maxLine
         ? props.stoppedLine
         : null;
+    // Keep an in-progress flash when this effect re-runs for an unrelated
+    // editor update (breakpoints, typing) on the same line.
+    const current = view.state.field(stoppedLineField);
+    const flash = current.line === stoppedLine ? current.flash : 0;
     view.dispatch({
       effects: [
         setBreakpointsEffect.of(breakpoints),
-        setStoppedLineEffect.of(stoppedLine),
+        setStoppedLineEffect.of(stopHighlight(stoppedLine, flash)),
       ],
     });
   }, [props.lang, props.value, props.breakpoints, props.stoppedLine]);
+
+  // Scroll after the highlight is applied. A new `revealSeq` repeats the scroll
+  // even when the line number did not change. The flash plays only for stops.
+  useEffect(() => {
+    if (props.revealSeq === 0 || props.stoppedLine == null) return;
+    const line = props.stoppedLine;
+    const flash = props.revealFlash ? props.revealSeq : 0;
+    let cancelled = false;
+    let cancelScroll = () => {};
+    let flashFrame = 0;
+
+    const afterScroll = () => {
+      if (cancelled || flash === 0) return;
+      const current = cmRef.current?.view;
+      if (!current) return;
+      if (line < 1 || line > current.state.doc.lines) return;
+      // Drop the class for a frame so the animation restarts.
+      current.dispatch({ effects: setStoppedLineEffect.of(stopHighlight(line, 0)) });
+      flashFrame = requestAnimationFrame(() => {
+        if (cancelled) return;
+        const view = cmRef.current?.view;
+        if (!view || line < 1 || line > view.state.doc.lines) return;
+        view.dispatch({ effects: setStoppedLineEffect.of(stopHighlight(line, flash)) });
+      });
+    };
+
+    const frame = requestAnimationFrame(() => {
+      if (cancelled) return;
+      const view = cmRef.current?.view;
+      if (!view) return;
+      cancelScroll = scrollLineIntoView(view, line, afterScroll);
+    });
+
+    return () => {
+      cancelled = true;
+      cancelAnimationFrame(frame);
+      cancelAnimationFrame(flashFrame);
+      cancelScroll();
+    };
+  }, [props.revealSeq, props.revealFlash, props.stoppedLine]);
 
   return (
     <CodeMirror

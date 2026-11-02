@@ -93,6 +93,10 @@ export type ExecutionApi = {
   isRunning: boolean;
   isPaused: boolean;
   stoppedLine: number | null;
+  /** Increments whenever the editor should scroll to `stoppedLine`. */
+  revealSeq: number;
+  /** True when this reveal is a debugger stop and the line should flash. */
+  revealFlash: boolean;
   frames: StackFrame[];
   selectedFrameId: number | null;
   scopes: ScopeView[];
@@ -121,6 +125,8 @@ export function useExecution({
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [stoppedLine, setStoppedLine] = useState<number | null>(null);
+  const [revealSeq, setRevealSeq] = useState(0);
+  const [revealFlash, setRevealFlash] = useState(false);
   const [frames, setFrames] = useState<StackFrame[]>([]);
   const [selectedFrameId, setSelectedFrameId] = useState<number | null>(null);
   const [scopes, setScopes] = useState<ScopeView[]>([]);
@@ -146,6 +152,8 @@ export function useExecution({
   const stopReasonRef = useRef<StopReason>('pause');
   const autoSkipStopRef = useRef(false);
   const emittedStopGenRef = useRef(-1);
+  /** Last stop we already asked the editor to reveal, so the twin refresh does not flash twice. */
+  const revealedStopKeyRef = useRef('');
   const getEngine = useCallback(async (lang: Lang): Promise<Engine> => {
     const existing = enginesRef.current[lang];
     if (existing) return existing;
@@ -258,8 +266,15 @@ export function useExecution({
           setScopes([]);
           return;
         }
-        setStoppedLine(fs[0].line);
         setSelectedFrameId(fs[0].id);
+        const topLine = fs[0].line > 0 ? fs[0].line : null;
+        setStoppedLine(topLine);
+        const revealKey = `${expectedGen}:${fs[0].id}:${topLine ?? ''}`;
+        if (topLine != null && revealedStopKeyRef.current !== revealKey) {
+          revealedStopKeyRef.current = revealKey;
+          setRevealFlash(true);
+          setRevealSeq((n) => n + 1);
+        }
         const views = loadFrame(fs[0].id);
         if (emittedStopGenRef.current !== expectedGen) {
           emittedStopGenRef.current = expectedGen;
@@ -666,7 +681,18 @@ export function useExecution({
       const views = loadFrame(id);
       const index = frames.findIndex((frame) => frame.id === id);
       const frame = index >= 0 ? frames[index] : undefined;
-      if (frame) Telemetry.log('debug_frame', { frame: toDebugFrame(index, frame.name, views) });
+      if (!frame) return;
+      Telemetry.log('debug_frame', { frame: toDebugFrame(index, frame.name, views) });
+      const inDocument =
+        frame.line >= 1 &&
+        isMainSource(frame.source?.path, LANGS[langRef.current].sourcePath);
+      if (inDocument) {
+        setStoppedLine(frame.line);
+        setRevealFlash(false);
+        setRevealSeq((n) => n + 1);
+      } else {
+        setStoppedLine(null);
+      }
     },
     [frames, loadFrame]
   );
@@ -694,6 +720,8 @@ export function useExecution({
     isRunning,
     isPaused,
     stoppedLine,
+    revealSeq,
+    revealFlash,
     frames,
     selectedFrameId,
     scopes,

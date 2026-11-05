@@ -53,22 +53,32 @@ export function TestsPanel({ state, isRunning }: TestsPanelProps) {
   );
 }
 
+const ROW: Record<string, { color: string; mark: string; detail?: string }> = {
+  passed: { color: '#34d399', mark: '✓' },
+  leaked: { color: '#facc15', mark: '!', detail: '#fde68a' },
+  failed: { color: '#f87171', mark: '✗', detail: '#fca5a5' },
+  errored: { color: '#f87171', mark: '✗', detail: '#fca5a5' },
+  running: { color: '#64748b', mark: '…' },
+};
+
 function TestRow({ test, result }: { test: TestInfo; result?: TestResult }) {
-  const status = result?.status;
-  const color =
-    status === 'passed' ? '#34d399' : status === 'failed' || status === 'errored' ? '#f87171' : '#64748b';
-  const mark = status === 'passed' ? '✓' : status === 'failed' || status === 'errored' ? '✗' : status === 'running' ? '…' : '·';
-  const failed = status === 'failed' || status === 'errored';
+  const style = ROW[result?.status ?? ''] ?? { color: '#64748b', mark: '·' };
   const failLine = result?.line ?? test.line;
+  const showDetail = style.detail && (result?.message || result?.actual || result?.expected);
 
   return (
-    <div style={{ padding: '6px 12px', borderLeft: `2px solid ${status === 'passed' || failed ? color : 'transparent'}` }}>
+    <div
+      style={{
+        padding: '6px 12px',
+        borderLeft: `2px solid ${result?.status && result.status !== 'running' ? style.color : 'transparent'}`,
+      }}
+    >
       <div style={{ display: 'flex', gap: 8, alignItems: 'baseline' }}>
-        <span style={{ color, width: 12, flexShrink: 0 }}>{mark}</span>
+        <span style={{ color: style.color, width: 12, flexShrink: 0 }}>{style.mark}</span>
         <span style={{ wordBreak: 'break-word' }}>{test.name}</span>
       </div>
-      {failed && (result?.message || result?.actual || result?.expected) && (
-        <div style={{ margin: '4px 0 0 20px', color: '#fca5a5', whiteSpace: 'pre-wrap' }}>
+      {showDetail && (
+        <div style={{ margin: '4px 0 0 20px', color: style.detail, whiteSpace: 'pre-wrap' }}>
           {result?.message && <div>{result.message}</div>}
           {result?.actual && (
             <div>

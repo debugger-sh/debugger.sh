@@ -13,7 +13,7 @@ export type TestInfo = {
   line?: number;
 };
 
-export type TestResultStatus = 'passed' | 'failed' | 'errored' | 'running';
+export type TestResultStatus = 'passed' | 'failed' | 'errored' | 'leaked' | 'running';
 
 export type TestResult = {
   key: string;
@@ -89,13 +89,18 @@ export function createTestReportDecoder(nonce: string) {
       state.results.set(key, { key, status: 'running' });
       return;
     }
-    if (type === 'test_passed' || type === 'test_failed' || type === 'test_errored') {
+    const outcome: Record<string, TestResultStatus> = {
+      test_passed: 'passed',
+      test_failed: 'failed',
+      test_errored: 'errored',
+      test_leaked: 'leaked',
+    };
+    if (type in outcome) {
       const key = asString(event.key);
       if (!key) return;
-      const status = type === 'test_passed' ? 'passed' : type === 'test_failed' ? 'failed' : 'errored';
       state.results.set(key, {
         key,
-        status,
+        status: outcome[type],
         durationMs: asNumber(event.durationMs),
         message: asString(event.message),
         actual: pair(event.actual),

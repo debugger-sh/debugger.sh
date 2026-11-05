@@ -1,9 +1,12 @@
 #include "SimpleTest.h"
+#include "MemoryDiagnostics.h"
+#include "TextUtils.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdint>
 #include <map>
 #include <set>
+#include <sstream>
 #include <algorithm>
 
 namespace simpletest {
@@ -91,7 +94,30 @@ int run(const char* nonce, const std::vector<std::string>& selected, bool all) {
         emit(nonce, "{\"type\":\"test_started\"" + key + "}");
         const auto start = std::chrono::steady_clock::now();
         std::string result = "test_passed", detail;
-        try { test.body(); }
+        try {
+            /* Reset memory counters so we don't have carryover across tests. */
+            MemoryDiagnostics::clear();
+            test.body();
+
+            /* See if there were any memory leaks. */
+            auto errors = MemoryDiagnostics::typesWithErrors();
+            if (!errors.empty()) {
+                result = "test_leaked";
+                ++failures;
+                std::ostringstream out;
+                out << std::endl << "Test had allocation count mismatch with these types:" << std::endl;
+                for (const auto& entry: errors) {
+                    std::string type = entry.first;
+                    int delta = entry.second;
+                    if (delta > 0) {
+                        out << "    " << type << ": Leaked " << pluralize(delta, "object") << "." << std::endl;
+                    } else {
+                        out << "    " << type << ": Deallocated " << pluralize(-delta, "more object") << " than allocated." << std::endl;
+                    }
+                }
+                detail = ",\"message\":" + quote(out.str()) + location(test);
+            }
+        }
         catch (const CheckFailure& failure) {
             result = "test_failed"; ++failures;
             detail = ",\"message\":" + quote(failure.message)

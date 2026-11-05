@@ -85,7 +85,7 @@ template<class F> void expectNoError(F&& body, const char* file, int line, const
 }
 // Copies the student value, then list-initializes the reference as that same
 // type. Both happen in this type's functions so EXPECT_EQUAL itself declares
-// no locals — locals declared in the macro show up in the debugger.
+// no locals -- locals declared in the macro show up in the debugger.
 template<class T> struct ExpectEqual {
     T value;
     [[gnu::noinline]] explicit ExpectEqual(T student) : value(std::move(student)) {}

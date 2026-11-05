@@ -557,7 +557,7 @@ export function useExecution({
             results: new Map(testDecoderRef.current.state.results),
           };
           const failuresExplainExit = [...nextState.results.values()].some(
-            (r) => r.status === 'failed' || r.status === 'errored',
+            (r) => r.status === 'failed' || r.status === 'errored' || r.status === 'leaked',
           );
           const couldntRun =
             result.type === 'error' ||

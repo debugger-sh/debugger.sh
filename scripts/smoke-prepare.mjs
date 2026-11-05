@@ -18,6 +18,14 @@ assert.match(header, /#define PROVIDED_TEST/);
 assert.match(header, /#define STUDENT_TEST/);
 assert.match(header, /#define EXPECT_EQUAL/);
 
+const memoryHeader = readFileSync(join(root, 'cs106b/cpp/include/MemoryDiagnostics.h'), 'utf8');
+assert.match(memoryHeader, /TRACK_ALLOCATIONS_OF/);
+assert.match(memoryHeader, /typesWithErrors/);
+assert.match(cpp, /MemoryDiagnostics::clear/);
+assert.match(cpp, /test_leaked/);
+assert.match(cpp, /pluralize\(delta, "object"\)/);
+assert.match(cpp, /pluralize\(-delta, "more object"\)/);
+
 const runner = readFileSync(join(root, 'cs106b/cpp/SimpleTest_runner.cpp'), 'utf8');
 assert.match(runner, /original_main/);
 assert.match(runner, /simpletest::run/);

@@ -3,16 +3,25 @@
  * Requires: built ../engine, built CS106B artifacts, PLAYWRIGHT_MODULE or playwright installed.
  */
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readdir, readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const engineJs = await readFile(join(root, 'node_modules/debugger-sh/dist/debugger-sh.js'));
+const engineWasm = await readFile(join(root, 'public/engine_bg.wasm'));
 const debugA = await readFile(join(root, 'public/cs106b/debug.a'));
 const pch = await readFile(join(root, 'public/cs106b/support.pch'));
 const dictionary = await readFile(join(root, 'public/cs106b/EnglishWords.dat'));
+const workerAssets = Object.fromEntries(
+  await Promise.all(
+    (await readdir(join(root, 'public/assets'))).map(async (name) => [
+      `/assets/${name}`,
+      await readFile(join(root, 'public/assets', name)),
+    ]),
+  ),
+);
 const { stanfordHeaders } = await import(pathToFileURL(join(root, 'cs106b/generated/headers.ts')).href);
 const { simpleTestRunner } = await import(
   pathToFileURL(join(root, 'cs106b/generated/simpleTestRunner.ts')).href
@@ -20,14 +29,25 @@ const { simpleTestRunner } = await import(
 
 const nonce = 'a'.repeat(32);
 const student = `#include "SimpleTest.h"
+#include "MemoryDiagnostics.h"
 #include "vector.h"
 #include <iostream>
+
+struct LeakNode {
+  int value;
+  TRACK_ALLOCATIONS_OF(LeakNode);
+};
 
 PROVIDED_TEST("Vector size") {
   Vector<int> v;
   v.add(3);
   EXPECT_EQUAL(v.size(), 1);
   EXPECT_EQUAL(v[0], 3);
+}
+
+PROVIDED_TEST("intentional leak") {
+  new LeakNode{1};
+  EXPECT(true);
 }
 
 int main() {
@@ -38,9 +58,13 @@ int main() {
 }
 `;
 
-// Minimal prepare: rename main, inject keys (single test hardcoded for smoke).
+// Minimal prepare: rename main, inject keys (hardcoded for smoke).
 const preparedStudent = student
   .replace('PROVIDED_TEST("Vector size")', 'SIMPLETEST_KEY("bbbbbbbbbbbbbbbb","Vector size","provided")')
+  .replace(
+    'PROVIDED_TEST("intentional leak")',
+    'SIMPLETEST_KEY("cccccccccccccccc","intentional leak","provided")',
+  )
   .replace(/int main\(\)/, 'int original_main(int argc, char** argv)');
 
 const config = `#define SIMPLETEST_NONCE "${nonce}"
@@ -76,7 +100,7 @@ function buildFs() {
   return rootFs;
 }
 
-const html = `<script type="module">
+const html = `<!doctype html><meta charset="utf-8"><script type="module">
 import { Engine } from '/engine.js';
 window.probe = {
   async run() {
@@ -140,6 +164,12 @@ const server = createServer((req, res) => {
   } else if (url === '/engine.js') {
     res.writeHead(200, { 'Content-Type': 'text/javascript' });
     res.end(engineJs);
+  } else if (url === '/engine_bg.wasm') {
+    res.writeHead(200, { 'Content-Type': 'application/wasm' });
+    res.end(engineWasm);
+  } else if (url && workerAssets[url]) {
+    res.writeHead(200, { 'Content-Type': 'text/javascript' });
+    res.end(workerAssets[url]);
   } else if (url === '/debug.a') {
     res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
     res.end(debugA);
@@ -167,10 +197,13 @@ try {
   console.log('stdout:\n', outcome.stdout);
   if (outcome.stderr) console.log('stderr:\n', outcome.stderr);
   assert.equal(outcome.result?.type, 'completed', JSON.stringify(outcome.result));
-  assert.equal(outcome.result?.exitCode, 0, 'tests should pass');
+  // One intentional leak → non-zero exit, but compile/run succeeded.
+  assert.equal(outcome.result?.exitCode, 1, 'leak should fail the suite');
   assert.match(outcome.stdout, /main_ran:1/);
   assert.match(outcome.stdout, new RegExp(`__SIMPLETEST_V1__:${nonce}:`));
   assert.match(outcome.stdout, /"type":"test_passed"/);
+  assert.match(outcome.stdout, /"type":"test_leaked"/);
+  assert.match(outcome.stdout, /Leaked 1 object/);
   console.log('smoke-engine: ok');
 } finally {
   await browser.close();

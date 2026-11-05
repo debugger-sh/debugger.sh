@@ -1,6 +1,7 @@
 'use client';
 
 import { ArrowDownToDot, ArrowUpFromDot, RedoDot } from 'lucide-react';
+import { Tooltip } from './Tooltip';
 
 export type RunStopProps = {
   isRunning: boolean;
@@ -76,15 +77,16 @@ function ActionBtn({
   children: React.ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      className="ide-action-btn ide-action-btn--primary"
-      title={label}
-      aria-label={label}
-      onClick={onClick}
-    >
-      {children}
-    </button>
+    <Tooltip label={label}>
+      <button
+        type="button"
+        className="ide-action-btn ide-action-btn--primary"
+        aria-label={label}
+        onClick={onClick}
+      >
+        {children}
+      </button>
+    </Tooltip>
   );
 }
 

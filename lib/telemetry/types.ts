@@ -45,14 +45,17 @@ export type TelemetryDetails = {
   session: {
     /** Persistent anonymous id for user identification, stored in local storage. */
     stable_id: string;
-    /** Set when the page was opened from a share */
+    /**
+     * Set when the page was opened from a share.
+     * `code` and `layout` are omitted in that case; both can be loaded from this id.
+     */
     share_id?: string;
     /** Language selected when the session became ready. */
     language: Language;
-    /** Contents of the file at the start of the session */
+    /** File contents when the session became ready. Omitted when `share_id` is set. */
     code?: string;
-    /** Layout at the start of the session */
-    layout: DockState;
+    /** Dock layout when the session became ready. Omitted when `share_id` is set. */
+    layout?: DockState;
     /** CSS viewport information  */
     viewport: {
       width: number;

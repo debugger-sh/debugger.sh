@@ -443,10 +443,15 @@ export class Telemetry {
     guard(() => {
       switch (event) {
         case 'session': {
-          const payload = details as TelemetryDetails['session'];
+          const payload = { ...(details as TelemetryDetails['session']) };
           if (sessionStarted || typeof window === 'undefined') return;
           sessionStarted = true;
-          layoutKey = JSON.stringify(payload.layout);
+          // Remember the opening layout even when the stored event omits it.
+          if (payload.layout) layoutKey = JSON.stringify(payload.layout);
+          if (payload.share_id) {
+            delete payload.code;
+            delete payload.layout;
+          }
           enqueue('session', payload, Date.now(), true);
           return;
         }

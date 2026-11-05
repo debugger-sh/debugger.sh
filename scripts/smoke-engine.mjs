@@ -11,7 +11,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const engineJs = await readFile(join(root, 'node_modules/debugger-sh/dist/debugger-sh.js'));
 const engineWasm = await readFile(join(root, 'public/engine_bg.wasm'));
-const debugA = await readFile(join(root, 'public/cs106b/debug.a'));
+const cs106bA = await readFile(join(root, 'public/cs106b/cs106b.a'));
 const pch = await readFile(join(root, 'public/cs106b/support.pch'));
 const dictionary = await readFile(join(root, 'public/cs106b/EnglishWords.dat'));
 const workerAssets = Object.fromEntries(
@@ -112,13 +112,13 @@ window.probe = {
     engine.stderr.on('data', b => this.stderr += dec.decode(b));
     engine.fs = ${JSON.stringify(buildFs())};
     engine.binaryFiles = {
-      '/__cs106b/debug.a': new Uint8Array(await (await fetch('/debug.a')).arrayBuffer()),
+      '/__cs106b/cs106b.a': new Uint8Array(await (await fetch('/cs106b.a')).arrayBuffer()),
       '/__cs106b/support.pch': new Uint8Array(await (await fetch('/support.pch')).arrayBuffer()),
       '/__cs106b/EnglishWords.dat': new Uint8Array(await (await fetch('/EnglishWords.dat')).arrayBuffer()),
     };
     engine.cppArtifacts = {
       sources: ['/main.c'],
-      archives: ['/__cs106b/debug.a'],
+      archives: ['/__cs106b/cs106b.a'],
       precompiledHeader: '/__cs106b/support.pch',
     };
     engine.debugger.enabled = false;
@@ -170,9 +170,9 @@ const server = createServer((req, res) => {
   } else if (url && workerAssets[url]) {
     res.writeHead(200, { 'Content-Type': 'text/javascript' });
     res.end(workerAssets[url]);
-  } else if (url === '/debug.a') {
+  } else if (url === '/cs106b.a') {
     res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
-    res.end(debugA);
+    res.end(cs106bA);
   } else if (url === '/support.pch') {
     res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
     res.end(pch);

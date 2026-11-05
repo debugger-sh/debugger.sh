@@ -14,7 +14,7 @@ export type StanfordRuntimeInputs = {
   cppArtifacts: CppArtifacts;
 };
 
-const pending = new Map<string, Promise<StanfordRuntimeInputs>>();
+let pending: Promise<StanfordRuntimeInputs> | null = null;
 
 async function fetchArtifact(name: keyof typeof artifactHashes): Promise<Uint8Array> {
   const response = await fetch(`/cs106b/${name}`);
@@ -29,16 +29,12 @@ async function fetchArtifact(name: keyof typeof artifactHashes): Promise<Uint8Ar
   return bytes;
 }
 
-/**
- * @param mode `debug` when the DAP debugger is enabled (matches DWARF-built archive).
- */
-export function loadStanfordArtifacts(mode: 'run' | 'debug'): Promise<StanfordRuntimeInputs> {
-  let result = pending.get(mode);
-  if (!result) {
-    result = (async () => {
-      const archiveName = mode === 'debug' ? 'debug.a' : 'run.a';
+/** Loads the non-debug Stanford archive (`cs106b.a`) used for both run and debug. */
+export function loadStanfordArtifacts(): Promise<StanfordRuntimeInputs> {
+  if (!pending) {
+    pending = (async () => {
       const [archive, pch, dictionary] = await Promise.all([
-        fetchArtifact(archiveName),
+        fetchArtifact('cs106b.a'),
         fetchArtifact('support.pch'),
         fetchArtifact('EnglishWords.dat'),
       ]);
@@ -46,20 +42,19 @@ export function loadStanfordArtifacts(mode: 'run' | 'debug'): Promise<StanfordRu
         // Headers stay as text FS nodes so `#include "map.h"` / `"SimpleTest.h"` work.
         fsFiles: stanfordHeaders,
         binaryFiles: {
-          [`/__cs106b/${archiveName}`]: archive,
+          '/__cs106b/cs106b.a': archive,
           '/__cs106b/support.pch': pch,
           '/__cs106b/EnglishWords.dat': dictionary,
         },
         cppArtifacts: {
-          archives: [`/__cs106b/${archiveName}`],
+          archives: ['/__cs106b/cs106b.a'],
           precompiledHeader: '/__cs106b/support.pch',
         },
       };
     })().catch((error: unknown) => {
-      pending.delete(mode);
+      pending = null;
       throw error;
     });
-    pending.set(mode, result);
   }
-  return result;
+  return pending;
 }

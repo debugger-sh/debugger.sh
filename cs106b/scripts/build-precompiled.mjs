@@ -3,8 +3,8 @@
  * Mirrors web-ide-cs106b/scripts/build-precompiled.mjs for the non-graphics subset.
  *
  * Outputs:
- *   cs106b/generated/{run.a,debug.a,support.pch,EnglishWords.dat,precompiled.json,headers.ts,precompiled.ts}
- *   public/cs106b/{run.a,debug.a,support.pch,EnglishWords.dat}
+ *   cs106b/generated/{cs106b.a,support.pch,EnglishWords.dat,precompiled.json,headers.ts,precompiled.ts}
+ *   public/cs106b/{cs106b.a,support.pch,EnglishWords.dat}
  */
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
@@ -210,26 +210,17 @@ if (artifactsFresh) {
     'EnglishWords.dat': hash(dictionary),
   };
 
-  for (const mode of ['run', 'debug']) {
-    console.log(`  compiling ${mode}.a…`);
-    const options = [
-      ...flags,
-      ...(mode === 'debug'
-        ? ['-O0', '-debug-info-kind=standalone', '-dwarf-version=5']
-        : []),
-    ];
-    const objects = [];
-    for (const source of sources.filter((s) => s.compile)) {
-      const object = '/' + source.name + '.o';
-      await invoke(['clang', ...options, '-emit-obj', '-x', 'c++', '-o', object, '/' + source.name]);
-      objects.push(object);
-    }
-    await invoke(['llvm-ar', 'rcs', '/' + mode + '.a', ...objects]);
-    const name = mode + '.a';
-    const bytes = await readFile(join(guestRoot, name));
-    await writeFile(join(generated, name), bytes);
-    files[name] = hash(bytes);
+  console.log('  compiling cs106b.a…');
+  const objects = [];
+  for (const source of sources.filter((s) => s.compile)) {
+    const object = '/' + source.name + '.o';
+    await invoke(['clang', ...flags, '-emit-obj', '-x', 'c++', '-o', object, '/' + source.name]);
+    objects.push(object);
   }
+  await invoke(['llvm-ar', 'rcs', '/cs106b.a', ...objects]);
+  const archiveBytes = await readFile(join(guestRoot, 'cs106b.a'));
+  await writeFile(join(generated, 'cs106b.a'), archiveBytes);
+  files['cs106b.a'] = hash(archiveBytes);
 
   await writeFile(
     join(generated, 'precompiled.json'),

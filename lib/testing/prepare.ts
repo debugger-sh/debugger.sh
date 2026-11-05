@@ -286,7 +286,7 @@ export function prepareCppRun(studentSource: string, studentPath = 'main.c'): Pr
   // same absolute path — a relative `main.c` will never hit.
   const dapPath = studentPath.startsWith('/') ? studentPath : `/${studentPath}`;
   // Fold the tiny runner into the student TU. SimpleTest.cpp lives in the
-  // precompiled CS106B archive (run.a / debug.a), so a test run is one clang
+  // precompiled CS106B archive (cs106b.a), so a test run is one clang
   // invocation instead of three — the engine reloads ~75MB clang wasm per file.
   const runnerBody = simpleTestRunner.replace(/^#include\s+"SimpleTest(?:_config)?\.h"\s*\n/gm, '');
   const preparedSource = [

@@ -168,11 +168,10 @@ export function useExecution({
     return pending;
   }, []);
 
-  // Warm the C++ toolchain HTTP cache + the common (non-debug) Stanford
-  // artifacts as soon as the IDE mounts. Debug archives load on demand.
+  // Warm the C++ toolchain HTTP cache + Stanford artifacts as soon as the IDE mounts.
   useEffect(() => {
     void getEngine('c');
-    void loadStanfordArtifacts('run');
+    void loadStanfordArtifacts();
   }, [getEngine]);
 
   const dapSend = useCallback(
@@ -459,7 +458,7 @@ export function useExecution({
 
         if (lang === 'c') {
           const prepared = prepareCppRun(code, fsKey);
-          const stanford = await loadStanfordArtifacts(wantsDebug ? 'debug' : 'run');
+          const stanford = await loadStanfordArtifacts();
           rt.fs = mergeDirNodes(
             pathsToDirNode(stanford.fsFiles),
             pathsToDirNode(prepared.files),

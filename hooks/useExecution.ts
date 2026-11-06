@@ -151,6 +151,8 @@ export function useExecution({
   const debugRefreshGenRef = useRef(0);
   const stopReasonRef = useRef<StopReason>('pause');
   const autoSkipStopRef = useRef(false);
+  /** Caps just-my-code `next` skips if we somehow never re-enter the main file. */
+  const librarySkipRef = useRef(0);
   const emittedStopGenRef = useRef(-1);
   /** Last stop we already asked the editor to reveal, so the twin refresh does not flash twice. */
   const revealedStopKeyRef = useRef('');
@@ -241,13 +243,24 @@ export function useExecution({
 
         // Just-my-code: never surface a pause whose PC is outside the main file
         // (Stanford headers, libc++, SimpleTest harness, etc.).
+        //
+        // Use `next` (step over), not `stepOut`. Headers like vector.h are
+        // compiled into the student TU, so Step Into on
+        // `EXPECT_EQUAL(list.printContact(v[i]), …)` lands in Vector::operator[]
+        // first. `stepOut` from there returns past the rest of the statement and
+        // skips user callees such as printContact; `next` finishes the library
+        // call and then enters the next step-in target in user code.
         if (!isMainSource(raw[0]?.source?.path, mainPath)) {
           // Invalidate sibling refresh so we don't double-resume.
           debugRefreshGenRef.current += 1;
-          // Keep the original stop reason across the automatic step-out.
+          // Keep the original stop reason across the automatic skip.
           autoSkipStopRef.current = true;
-          // Return to the caller so step-through keeps going on the next main-file line.
-          dapSend('stepOut', { threadId: 1 });
+          if (librarySkipRef.current++ >= 64) {
+            librarySkipRef.current = 0;
+            dapSend('continue', { threadId: 1 });
+          } else {
+            dapSend('next', { threadId: 1 });
+          }
           setIsPaused(false);
           setStoppedLine(null);
           setFrames([]);
@@ -255,6 +268,7 @@ export function useExecution({
           setScopes([]);
           return;
         }
+        librarySkipRef.current = 0;
 
         // Hide SimpleTest runner / harness frames when stopped inside a test.
         const fs = raw.filter((frame) => !isSimpleTestHarnessFrame(frame));

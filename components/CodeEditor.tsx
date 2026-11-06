@@ -432,7 +432,6 @@ export default function CodeEditor(props: CodeEditorProps) {
         foldGutter: false,
         highlightActiveLine: false,
         highlightActiveLineGutter: false,
-        searchKeymap: false,
       }}
       style={{ height: '100%', flex: 1, minWidth: 0, overflow: 'hidden' }}
     />

@@ -2,14 +2,12 @@
 #include "SimpleTest_config.h"
 #include <cstdio>
 
-#if DEBUGGER_HAS_USER_MAIN
-int original_main(int argc, char** argv);
-#endif
+// Defined by the student (`#define main original_main`) or by a stub that
+// prepare.ts injects when the student has no main.
+int original_main();
 
-int main(int argc, char** argv) {
-#if DEBUGGER_HAS_USER_MAIN
-    original_main(argc, argv);
+int main() {
+    original_main();
     std::fflush(stdout);
-#endif
     return simpletest::run(SIMPLETEST_NONCE, SIMPLETEST_SELECTION, SIMPLETEST_ALL);
 }

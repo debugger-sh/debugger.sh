@@ -58,19 +58,10 @@ int main() {
 }
 `;
 
-// Minimal prepare: rename main, inject keys (hardcoded for smoke).
-const preparedStudent = student
-  .replace('PROVIDED_TEST("Vector size")', 'SIMPLETEST_KEY("bbbbbbbbbbbbbbbb","Vector size","provided")')
-  .replace(
-    'PROVIDED_TEST("intentional leak")',
-    'SIMPLETEST_KEY("cccccccccccccccc","intentional leak","provided")',
-  )
-  .replace(/int main\(\)/, 'int original_main(int argc, char** argv)');
-
+// Match prepare.ts: leave test macros alone, #define main away, append runner.
 const config = `#define SIMPLETEST_NONCE "${nonce}"
 #define SIMPLETEST_ALL true
 #define SIMPLETEST_SELECTION std::vector<std::string>{}
-#define DEBUGGER_HAS_USER_MAIN 1
 `;
 
 const runnerBody = simpleTestRunner.replace(/^#include\s+"SimpleTest(?:_config)?\.h"\s*\n/gm, '');
@@ -79,9 +70,11 @@ function buildFs() {
   const files = {
     ...stanfordHeaders,
     'main.c': [
-      '#include "SimpleTest.h"',
+      '#define main original_main',
       '#line 1 "/main.c"',
-      preparedStudent,
+      student,
+      '#undef main',
+      // student has main — no stub
       '#include "SimpleTest_config.h"',
       runnerBody,
     ].join('\n'),

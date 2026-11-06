@@ -27,8 +27,8 @@ assert.match(cpp, /pluralize\(delta, "object"\)/);
 assert.match(cpp, /pluralize\(-delta, "more object"\)/);
 
 const runner = readFileSync(join(root, 'cs106b/cpp/SimpleTest_runner.cpp'), 'utf8');
-assert.match(runner, /original_main/);
 assert.match(runner, /simpletest::run/);
+assert.match(runner, /original_main/);
 assert.doesNotMatch(runner, /debugger_hidden_main/);
 
 const generatedRunner = readFileSync(join(root, 'cs106b/generated/simpleTestRunner.ts'), 'utf8');
@@ -40,8 +40,11 @@ assert.match(loadArtifacts, /stanfordHeaders/);
 assert.doesNotMatch(loadArtifacts, /SIMPLETEST_H/);
 
 const prepare = readFileSync(join(root, 'lib/testing/prepare.ts'), 'utf8');
-assert.match(prepare, /original_main/);
+assert.match(prepare, /#define main original_main/);
+assert.doesNotMatch(prepare, /tokenizeCpp/);
 assert.doesNotMatch(prepare, /debugger_hidden_main/);
+// Missing returns in student code must stay visible to clang (-Werror).
+assert.doesNotMatch(prepare, /ignored "-Wreturn-type"/);
 
 const nonce = 'abcd'.repeat(4);
 const marker = `__SIMPLETEST_V1__:${nonce}:`;

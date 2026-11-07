@@ -5,8 +5,8 @@ import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { cpp } from '@codemirror/lang-cpp';
 import { python } from '@codemirror/lang-python';
 import { rust } from '@codemirror/lang-rust';
-import { Decoration, EditorView, gutter, GutterMarker, keymap, type Panel } from '@codemirror/view';
-import { Prec, StateEffect, StateField, type Extension } from '@codemirror/state';
+import { Decoration, EditorView, gutter, GutterMarker, type Panel } from '@codemirror/view';
+import { StateEffect, StateField, type Extension } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import {
   closeSearchPanel,
@@ -524,22 +524,14 @@ function createFindPanel(view: EditorView): Panel {
 }
 
 function isFindChord(e: KeyboardEvent): boolean {
-  return (e.key === 'f' || e.key === 'F') && (e.metaKey || e.ctrlKey) && !e.altKey;
+  return (e.key === 'f' || e.key === 'F') && (e.metaKey || e.ctrlKey) && !e.altKey && !e.shiftKey;
 }
 
 function toggleFind(view: EditorView): boolean {
   return searchPanelOpen(view.state) ? closeSearchPanel(view) : openSearchPanel(view);
 }
 
-const findOverlay: Extension = [
-  search({ top: true, createPanel: createFindPanel }),
-  Prec.highest(
-    keymap.of([
-      { key: 'Mod-f', run: toggleFind, preventDefault: true },
-      { key: 'Ctrl-f', run: toggleFind, preventDefault: true },
-    ]),
-  ),
-];
+const findOverlay: Extension = search({ top: true, createPanel: createFindPanel });
 
 // ---------------------------------------------------------------------------
 // Component

@@ -5,9 +5,20 @@ import CodeMirror, { type ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { cpp } from '@codemirror/lang-cpp';
 import { python } from '@codemirror/lang-python';
 import { rust } from '@codemirror/lang-rust';
-import { Decoration, EditorView, gutter, GutterMarker } from '@codemirror/view';
-import { StateEffect, StateField, type Extension } from '@codemirror/state';
+import { Decoration, EditorView, gutter, GutterMarker, keymap, type Panel } from '@codemirror/view';
+import { Prec, StateEffect, StateField, type Extension } from '@codemirror/state';
 import { HighlightStyle, syntaxHighlighting } from '@codemirror/language';
+import {
+  closeSearchPanel,
+  findNext,
+  findPrevious,
+  getSearchQuery,
+  openSearchPanel,
+  search,
+  searchPanelOpen,
+  SearchQuery,
+  setSearchQuery,
+} from '@codemirror/search';
 import { tags as t } from '@lezer/highlight';
 
 import { LANGS, type Lang } from '@/components/constants';
@@ -72,6 +83,14 @@ const theme = {
     variable: '#e2e8f0', // slate-200   — local identifiers
     operator: '#94a3b8', // slate-400   — +, -, ;, (), {}, ...
   },
+  find: {
+    bg: '#111',
+    border: '#1a1a1a',
+    inputBg: '#0a0a0a',
+    muted: '#8a8a8a',
+    match: 'rgba(250, 204, 21, 0.28)',
+    matchSelected: 'rgba(250, 204, 21, 0.55)',
+  },
 } as const;
 
 const editorChrome = EditorView.theme(
@@ -113,6 +132,84 @@ const editorChrome = EditorView.theme(
       '0%': { boxShadow: 'inset 0 0 0 999px rgba(251, 191, 36, 0.55)' },
       '100%': { boxShadow: 'inset 0 0 0 999px rgba(251, 191, 36, 0)' },
     },
+    // Browser-like find overlay: float top-right over the editor, no layout shift.
+    // `!important` beats the inline `top: 0` CodeMirror sets on the panels host.
+    '.cm-panels.cm-panels-top': {
+      position: 'absolute',
+      top: '8px !important',
+      right: '12px',
+      left: 'auto',
+      width: 'auto',
+      zIndex: 20,
+      backgroundColor: 'transparent',
+      borderBottom: 'none',
+    },
+    '.cm-search-overlay': {
+      display: 'flex',
+      alignItems: 'center',
+      gap: '2px',
+      padding: '4px',
+      backgroundColor: theme.find.bg,
+      border: `1px solid ${theme.find.border}`,
+      borderRadius: '4px',
+      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
+      fontFamily:
+        'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      fontSize: '12px',
+      color: theme.fg,
+    },
+    '.cm-search-overlay input[main-field]': {
+      width: '180px',
+      margin: 0,
+      padding: '5px 8px',
+      border: `1px solid ${theme.find.border}`,
+      borderRadius: '3px',
+      backgroundColor: theme.find.inputBg,
+      color: theme.fg,
+      outline: 'none',
+      font: 'inherit',
+    },
+    '.cm-search-overlay input[main-field]:focus': {
+      borderColor: '#3b82f6',
+    },
+    '.cm-search-overlay .cm-search-count': {
+      minWidth: '4.5em',
+      padding: '0 6px',
+      color: theme.find.muted,
+      textAlign: 'center',
+      whiteSpace: 'nowrap',
+      fontVariantNumeric: 'tabular-nums',
+      userSelect: 'none',
+    },
+    '.cm-search-overlay .cm-search-count[data-empty="true"]': {
+      color: '#f87171',
+    },
+    '.cm-search-overlay button': {
+      display: 'inline-flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      width: '24px',
+      height: '24px',
+      margin: 0,
+      padding: 0,
+      border: 'none',
+      borderRadius: '3px',
+      background: 'transparent',
+      color: theme.find.muted,
+      font: 'inherit',
+      lineHeight: 1,
+      cursor: 'pointer',
+    },
+    '.cm-search-overlay button:hover': {
+      backgroundColor: '#181818',
+      color: theme.fg,
+    },
+    '.cm-search-overlay button[name=close]': {
+      color: theme.find.muted,
+      fontSize: '14px',
+    },
+    '.cm-searchMatch': { backgroundColor: theme.find.match },
+    '.cm-searchMatch-selected': { backgroundColor: theme.find.matchSelected },
   },
   { dark: true },
 );
@@ -311,6 +408,140 @@ function scrollLineIntoView(view: EditorView, line: number, onDone: () => void):
 }
 
 // ---------------------------------------------------------------------------
+// Find overlay (Ctrl/Cmd+F)
+// ---------------------------------------------------------------------------
+
+function matchCount(view: EditorView, query: SearchQuery): string {
+  if (!query.search) return '';
+  if (!query.valid) return 'No results';
+  let total = 0;
+  let current = 0;
+  const sel = view.state.selection.main;
+  for (let cur = query.getCursor(view.state); ; ) {
+    const step = cur.next();
+    if (step.done) break;
+    total++;
+    if (step.value.from === sel.from && step.value.to === sel.to) current = total;
+    if (total > 999) return `${current || '–'} of 999+`;
+  }
+  if (total === 0) return 'No results';
+  return `${current || '–'} of ${total}`;
+}
+
+function createFindPanel(view: EditorView): Panel {
+  let query = getSearchQuery(view.state);
+
+  const input = Object.assign(document.createElement('input'), {
+    type: 'text',
+    value: query.search,
+    placeholder: 'Find',
+    autocomplete: 'off',
+    spellcheck: false,
+  });
+  input.setAttribute('aria-label', 'Find');
+  input.setAttribute('main-field', 'true');
+
+  const count = document.createElement('span');
+  count.className = 'cm-search-count';
+
+  const btn = (name: string, label: string, title: string, onClick: () => void) => {
+    const el = Object.assign(document.createElement('button'), {
+      type: 'button',
+      name,
+      textContent: label,
+      title,
+    });
+    el.setAttribute('aria-label', title);
+    el.addEventListener('click', onClick);
+    return el;
+  };
+
+  const refresh = () => {
+    const text = matchCount(view, query);
+    count.textContent = text;
+    count.dataset.empty = text === 'No results' ? 'true' : 'false';
+  };
+
+  // findNext/Previous call selectSearchInput(), which re-selects the whole
+  // query — collapse the caret so typing appends instead of replacing.
+  const go = (fn: typeof findNext) => {
+    fn(view);
+    input.focus();
+    const n = input.value.length;
+    input.setSelectionRange(n, n);
+    refresh();
+  };
+
+  const commit = () => {
+    const next = new SearchQuery({ search: input.value });
+    if (next.eq(query)) return;
+    query = next;
+    view.dispatch({ effects: setSearchQuery.of(next) });
+    if (next.valid) go(findNext);
+    else refresh();
+  };
+
+  input.addEventListener('input', commit);
+
+  const dom = document.createElement('div');
+  dom.className = 'cm-search-overlay';
+  dom.append(
+    input,
+    count,
+    btn('prev', '↑', 'Previous match', () => go(findPrevious)),
+    btn('next', '↓', 'Next match', () => go(findNext)),
+    btn('close', '×', 'Close', () => closeSearchPanel(view)),
+  );
+  dom.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      closeSearchPanel(view);
+    } else if (e.key === 'Enter' && e.target === input) {
+      e.preventDefault();
+      go(e.shiftKey ? findPrevious : findNext);
+    }
+  });
+
+  return {
+    dom,
+    top: true,
+    mount: () => {
+      input.select();
+      refresh();
+    },
+    update: (u) => {
+      for (const tr of u.transactions) {
+        for (const e of tr.effects) {
+          if (e.is(setSearchQuery) && !e.value.eq(query)) {
+            query = e.value;
+            if (input.value !== e.value.search) input.value = e.value.search;
+          }
+        }
+      }
+      if (u.docChanged || u.selectionSet) refresh();
+    },
+  };
+}
+
+function isFindChord(e: KeyboardEvent): boolean {
+  return (e.key === 'f' || e.key === 'F') && (e.metaKey || e.ctrlKey) && !e.altKey;
+}
+
+function toggleFind(view: EditorView): boolean {
+  return searchPanelOpen(view.state) ? closeSearchPanel(view) : openSearchPanel(view);
+}
+
+const findOverlay: Extension = [
+  search({ top: true, createPanel: createFindPanel }),
+  Prec.highest(
+    keymap.of([
+      { key: 'Mod-f', run: toggleFind, preventDefault: true },
+      { key: 'Ctrl-f', run: toggleFind, preventDefault: true },
+    ]),
+  ),
+];
+
+// ---------------------------------------------------------------------------
 // Component
 // ---------------------------------------------------------------------------
 
@@ -346,10 +577,26 @@ export default function CodeEditor(props: CodeEditorProps) {
       makeLineGutter(toggleRef, breakpointsEnabled),
       telemetryEditor(),
       syntaxHighlighting(codeSyntax),
+      findOverlay,
       editorChrome,
     ],
     [props.lang, breakpointsEnabled],
   );
+
+  // App-wide find: while this editor pane is visible, ⌘/Ctrl+F always toggles
+  // our overlay — even when focus is in the terminal, variables, etc.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isFindChord(e)) return;
+      const view = cmRef.current?.view;
+      if (!view || view.dom.closest('[hidden]')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleFind(view);
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, []);
 
   // React → CM sync. Include lang/value so we don't apply line state mid-switch.
   useEffect(() => {

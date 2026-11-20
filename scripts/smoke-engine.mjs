@@ -1,6 +1,7 @@
 /**
- * Headless Playwright smoke: compile+run Stanford Vector + SimpleTest via the forked engine.
- * Requires: built ../engine, built CS106B artifacts, PLAYWRIGHT_MODULE or playwright installed.
+ * Headless Playwright smoke: compile+run Stanford Vector + SimpleTest on the engine,
+ * the way the IDE does (one engine, Stanford bundle mounted, tests on a pipe device).
+ * Requires: built CS106B artifacts (`npm run build:cs106b`) and playwright.
  */
 import assert from 'node:assert/strict';
 import { readdir, readFile } from 'node:fs/promises';
@@ -9,25 +10,18 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const engineJs = await readFile(join(root, 'node_modules/debugger-sh/dist/debugger-sh.js'));
-const engineWasm = await readFile(join(root, 'public/engine_bg.wasm'));
-const cs106bA = await readFile(join(root, 'public/cs106b/cs106b.a'));
-const pch = await readFile(join(root, 'public/cs106b/support.pch'));
-const dictionary = await readFile(join(root, 'public/cs106b/EnglishWords.dat'));
-const workerAssets = Object.fromEntries(
-  await Promise.all(
-    (await readdir(join(root, 'public/assets'))).map(async (name) => [
-      `/assets/${name}`,
-      await readFile(join(root, 'public/assets', name)),
-    ]),
-  ),
-);
-const { stanfordHeaders } = await import(pathToFileURL(join(root, 'cs106b/generated/headers.ts')).href);
+const engineDist = join(root, 'node_modules/debugger-sh/dist');
+const files = {
+  '/engine.js': ['text/javascript', await readFile(join(engineDist, 'debugger-sh.js'))],
+  '/cs106b.tar.gz': ['application/gzip', await readFile(join(root, 'public/cs106b/cs106b.tar.gz'))],
+};
+for (const name of await readdir(join(engineDist, 'assets'))) {
+  files[`/assets/${name}`] = ['text/javascript', await readFile(join(engineDist, 'assets', name))];
+}
 const { simpleTestRunner } = await import(
   pathToFileURL(join(root, 'cs106b/generated/simpleTestRunner.ts')).href
 );
 
-const nonce = 'a'.repeat(32);
 const student = `#include "SimpleTest.h"
 #include "MemoryDiagnostics.h"
 #include "vector.h"
@@ -59,90 +53,43 @@ int main() {
 `;
 
 // Match prepare.ts: leave test macros alone, #define main away, append runner.
-const config = `#define SIMPLETEST_NONCE "${nonce}"
-#define SIMPLETEST_ALL true
-#define SIMPLETEST_SELECTION std::vector<std::string>{}
-`;
-
-const runnerBody = simpleTestRunner.replace(/^#include\s+"SimpleTest(?:_config)?\.h"\s*\n/gm, '');
-
-function buildFs() {
-  const files = {
-    ...stanfordHeaders,
-    'main.c': [
-      '#define main original_main',
-      '#line 1 "/main.c"',
-      student,
-      '#undef main',
-      // student has main — no stub
-      '#include "SimpleTest_config.h"',
-      runnerBody,
-    ].join('\n'),
-    'SimpleTest_config.h': config,
-  };
-  const rootFs = {};
-  for (const [path, content] of Object.entries(files)) {
-    const parts = path.split('/');
-    let dir = rootFs;
-    for (const part of parts.slice(0, -1)) {
-      dir[part] ??= {};
-      dir = dir[part];
-    }
-    dir[parts.at(-1)] = content;
-  }
-  return rootFs;
-}
+const source = ['#define main original_main', '#line 1 "/main.c"', student, '#undef main', '', simpleTestRunner].join(
+  '\n',
+);
 
 const html = `<!doctype html><meta charset="utf-8"><script type="module">
-import { Engine } from '/engine.js';
+import { Engine, Pipe } from '/engine.js';
 window.probe = {
   async run() {
-    this.stdout = '';
-    this.stderr = '';
-    const engine = await Engine.create('c');
-    const dec = new TextDecoder();
-    engine.stdout.on('data', b => this.stdout += dec.decode(b));
-    engine.stderr.on('data', b => this.stderr += dec.decode(b));
-    engine.fs = ${JSON.stringify(buildFs())};
-    engine.binaryFiles = {
-      '/__cs106b/cs106b.a': new Uint8Array(await (await fetch('/cs106b.a')).arrayBuffer()),
-      '/__cs106b/support.pch': new Uint8Array(await (await fetch('/support.pch')).arrayBuffer()),
-      '/__cs106b/EnglishWords.dat': new Uint8Array(await (await fetch('/EnglishWords.dat')).arrayBuffer()),
-    };
-    engine.cppArtifacts = {
-      sources: ['/main.c'],
-      archives: ['/__cs106b/cs106b.a'],
-      precompiledHeader: '/__cs106b/support.pch',
-    };
-    engine.debugger.enabled = false;
-    this.result = await engine.run();
-    return { result: this.result, stdout: this.stdout, stderr: this.stderr };
+    const engine = await Engine.create({
+      fs: new Uint8Array(await (await fetch('/cs106b.tar.gz')).arrayBuffer()),
+    });
+    await engine.fs.writeFile('/main.c', ${JSON.stringify(source)});
+    const tests = new Pipe();
+    const proc = engine.run('cpp', {
+      sources: ['main.c'],
+      cxxFlags: ['-include-pch', '/__cs106b/support.pch'],
+      lldFlags: ['/__cs106b/cs106b.a'],
+      devices: { '/dev/simpletest': tests },
+    });
+    let stdout = '', stderr = '';
+    proc.stdout.on('text', (text) => (stdout += text));
+    proc.stderr.on('text', (text) => (stderr += text));
+    const events = [];
+    const reading = (async () => { for await (const line of tests.lines()) events.push(JSON.parse(line)); })();
+    const result = await proc;
+    await reading;
+    engine.dispose();
+    return { result, stdout, stderr, events };
   }
 };
 </script>`;
 
-const playwrightPath =
-  process.env.PLAYWRIGHT_MODULE ||
-  join(root, 'node_modules/playwright/index.mjs');
+const playwrightPath = process.env.PLAYWRIGHT_MODULE || join(root, 'node_modules/playwright/index.mjs');
 let chromium;
 try {
   ({ chromium } = await import(pathToFileURL(playwrightPath).href));
 } catch {
-  // Fall back to engine sibling / web-ide playwright if present.
-  const candidates = [
-    join(root, '../web-ide/node_modules/playwright/index.mjs'),
-    join(root, '../web-ide-cs106b/node_modules/playwright/index.mjs'),
-  ];
-  for (const candidate of candidates) {
-    try {
-      ({ chromium } = await import(pathToFileURL(candidate).href));
-      break;
-    } catch {
-      /* try next */
-    }
-  }
-}
-if (!chromium) {
   console.error('Install playwright or set PLAYWRIGHT_MODULE');
   process.exit(2);
 }
@@ -150,32 +97,15 @@ if (!chromium) {
 const server = createServer((req, res) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
-  const url = req.url?.split('?')[0];
-  if (url === '/') {
-    res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(html);
-  } else if (url === '/engine.js') {
-    res.writeHead(200, { 'Content-Type': 'text/javascript' });
-    res.end(engineJs);
-  } else if (url === '/engine_bg.wasm') {
-    res.writeHead(200, { 'Content-Type': 'application/wasm' });
-    res.end(engineWasm);
-  } else if (url && workerAssets[url]) {
-    res.writeHead(200, { 'Content-Type': 'text/javascript' });
-    res.end(workerAssets[url]);
-  } else if (url === '/cs106b.a') {
-    res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
-    res.end(cs106bA);
-  } else if (url === '/support.pch') {
-    res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
-    res.end(pch);
-  } else if (url === '/EnglishWords.dat') {
-    res.writeHead(200, { 'Content-Type': 'application/octet-stream' });
-    res.end(dictionary);
-  } else {
+  const url = req.url?.split('?')[0] ?? '/';
+  const file = url === '/' ? ['text/html', html] : files[url];
+  if (!file) {
     res.writeHead(404);
     res.end();
+    return;
   }
+  res.writeHead(200, { 'Content-Type': file[0] });
+  res.end(file[1]);
 });
 
 await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen));
@@ -189,14 +119,16 @@ try {
   console.log('exit', outcome.result);
   console.log('stdout:\n', outcome.stdout);
   if (outcome.stderr) console.log('stderr:\n', outcome.stderr);
-  assert.equal(outcome.result?.type, 'completed', JSON.stringify(outcome.result));
   // One intentional leak → non-zero exit, but compile/run succeeded.
-  assert.equal(outcome.result?.exitCode, 1, 'leak should fail the suite');
+  assert.deepEqual(outcome.result, { exitCode: 1, killed: false }, 'leak should fail the suite');
   assert.match(outcome.stdout, /main_ran:1/);
-  assert.match(outcome.stdout, new RegExp(`__SIMPLETEST_V1__:${nonce}:`));
-  assert.match(outcome.stdout, /"type":"test_passed"/);
-  assert.match(outcome.stdout, /"type":"test_leaked"/);
-  assert.match(outcome.stdout, /Leaked 1 object/);
+  // Test events travel on their own pipe, never through stdout.
+  assert.doesNotMatch(outcome.stdout, /"type":/);
+  const types = outcome.events.map((event) => event.type);
+  assert.ok(types.includes('test_passed'), types.join(', '));
+  assert.ok(types.includes('test_leaked'), types.join(', '));
+  assert.equal(types.at(-1), 'run_finished');
+  assert.match(outcome.events.find((event) => event.type === 'test_leaked').message, /Leaked 1 object/);
   console.log('smoke-engine: ok');
 } finally {
   await browser.close();

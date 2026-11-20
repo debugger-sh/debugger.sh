@@ -54,44 +54,46 @@ static std::string quote(const std::string& input) {
     }
     return output + '"';
 }
-static void emit(const char* nonce, const std::string& json) {
-    // No leading newline — a blank line before each marker used to leak into the terminal.
-    std::printf("__SIMPLETEST_V1__:%s:%s\n", nonce, json.c_str()); std::fflush(stdout);
+static void emit(const std::string& json) {
+    // A separate channel from stdout, so test events never mix with program output.
+    static FILE* const channel = std::fopen("/dev/simpletest", "w");
+    FILE* out = channel ? channel : stdout;
+    std::fprintf(out, "%s\n", json.c_str()); std::fflush(out);
 }
 static std::string location(const Test& test) {
     return ",\"path\":" + quote(test.path) + ",\"line\":" + std::to_string(test.line);
 }
-int run(const char* nonce, const std::vector<std::string>& selected, bool all) {
+int run(const std::vector<std::string>& selected, bool all) {
     const auto suiteStart = std::chrono::steady_clock::now();
-    emit(nonce, "{\"type\":\"run_started\"}");
+    emit("{\"type\":\"run_started\"}");
     std::map<std::string, Test> unique;
     std::vector<Test> ordered;
     for (const auto& test : registry()) {
         auto inserted = unique.emplace(test.key, test);
         if (inserted.second) ordered.push_back(test);
         if (!inserted.second && (inserted.first->second.name != test.name || inserted.first->second.path != test.path || inserted.first->second.line != test.line)) {
-            emit(nonce, "{\"type\":\"run_terminated\",\"reason\":\"protocol_violation\",\"message\":\"Test identity collision\"}"); return 1;
+            emit("{\"type\":\"run_terminated\",\"reason\":\"protocol_violation\",\"message\":\"Test identity collision\"}"); return 1;
         }
-        if (unique.size() > 10000) { emit(nonce, "{\"type\":\"run_terminated\",\"reason\":\"protocol_violation\",\"message\":\"Too many tests\"}"); return 1; }
+        if (unique.size() > 10000) { emit("{\"type\":\"run_terminated\",\"reason\":\"protocol_violation\",\"message\":\"Too many tests\"}"); return 1; }
     }
     std::stable_sort(ordered.begin(), ordered.end(), [](const Test& left, const Test& right) {
         return left.path < right.path || (left.path == right.path && left.line < right.line);
     });
     for (const auto& test : ordered) {
-        emit(nonce, "{\"type\":\"test_discovered\",\"key\":" + quote(test.key) + ",\"name\":" + quote(test.name)
+        emit("{\"type\":\"test_discovered\",\"key\":" + quote(test.key) + ",\"name\":" + quote(test.name)
             + ",\"origin\":" + quote(test.origin) + ",\"group\":" + quote(bounded(test.path, 512)) + location(test) + "}");
     }
-    emit(nonce, "{\"type\":\"discovery_finished\"}");
+    emit("{\"type\":\"discovery_finished\"}");
     const std::set<std::string> filter(selected.begin(), selected.end());
     for (const auto& key : filter) if (!unique.count(key)) {
-        emit(nonce, "{\"type\":\"run_terminated\",\"reason\":\"selection_stale\",\"message\":\"A selected test is not present in the compiled program\"}"); return 1;
+        emit("{\"type\":\"run_terminated\",\"reason\":\"selection_stale\",\"message\":\"A selected test is not present in the compiled program\"}"); return 1;
     }
-    if (!all && filter.empty()) { emit(nonce, "{\"type\":\"run_terminated\",\"reason\":\"selection_stale\",\"message\":\"No tests selected\"}"); return 1; }
+    if (!all && filter.empty()) { emit("{\"type\":\"run_terminated\",\"reason\":\"selection_stale\",\"message\":\"No tests selected\"}"); return 1; }
     int failures = 0; std::size_t count = 0;
     for (const auto& test : ordered) {
         if (!all && !filter.count(test.key)) continue;
         ++count; const std::string key = ",\"key\":" + quote(test.key);
-        emit(nonce, "{\"type\":\"test_started\"" + key + "}");
+        emit("{\"type\":\"test_started\"" + key + "}");
         const auto start = std::chrono::steady_clock::now();
         std::string result = "test_passed", detail;
         try {
@@ -128,10 +130,10 @@ int run(const char* nonce, const std::vector<std::string>& selected, bool all) {
         catch (const std::exception& e) { result = "test_errored"; ++failures; detail = ",\"message\":" + quote(e.what()) + location(test); }
         catch (...) { result = "test_errored"; ++failures; detail = ",\"message\":\"Unexpected non-standard exception\"" + location(test); }
         const auto duration = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
-        emit(nonce, "{\"type\":" + quote(result) + key + ",\"durationMs\":" + std::to_string(duration) + detail + "}");
+        emit("{\"type\":" + quote(result) + key + ",\"durationMs\":" + std::to_string(duration) + detail + "}");
     }
     const auto duration = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - suiteStart).count();
-    emit(nonce, "{\"type\":\"run_finished\",\"durationMs\":" + std::to_string(duration) + (count ? "" : ",\"message\":\"No tests ran\"") + "}");
+    emit("{\"type\":\"run_finished\",\"durationMs\":" + std::to_string(duration) + (count ? "" : ",\"message\":\"No tests ran\"") + "}");
     return failures ? 1 : 0;
 }
 }

@@ -1,13 +1,9 @@
 # Cloudflare Workers Static Assets _headers file
 # https://developers.cloudflare.com/workers/static-assets/headers/
 #
-# COOP/COEP are required by @jtrb/runtime so SharedArrayBuffer works
-# (the runtime uses it for stdin).
+# COOP/COEP are required by debugger-sh so SharedArrayBuffer works
+# (the engine's filesystem and pipes live in shared memory).
 
 /*
   Cross-Origin-Embedder-Policy: require-corp
   Cross-Origin-Opener-Policy: same-origin
-
-/engine_bg.wasm
-  Content-Type: application/wasm
-  Cross-Origin-Resource-Policy: same-origin

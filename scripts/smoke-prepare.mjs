@@ -9,9 +9,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 const cpp = readFileSync(join(root, 'cs106b/cpp/src/SimpleTest.cpp'), 'utf8');
-assert.match(cpp, /__SIMPLETEST_V1__/);
-// emit must not print a leading blank line before each marker
-assert.doesNotMatch(cpp, /printf\("\\n__SIMPLETEST/);
+// Test events go to their own device, never interleaved with program output.
+assert.match(cpp, /\/dev\/simpletest/);
 
 const header = readFileSync(join(root, 'cs106b/cpp/include/SimpleTest.h'), 'utf8');
 assert.match(header, /#define PROVIDED_TEST/);
@@ -36,7 +35,7 @@ assert.match(generatedRunner, /simpleTestRunner/);
 assert.match(generatedRunner, /original_main/);
 
 const loadArtifacts = readFileSync(join(root, 'lib/stanford/loadArtifacts.ts'), 'utf8');
-assert.match(loadArtifacts, /stanfordHeaders/);
+assert.match(loadArtifacts, /cs106b\.tar\.gz/);
 assert.doesNotMatch(loadArtifacts, /SIMPLETEST_H/);
 
 const prepare = readFileSync(join(root, 'lib/testing/prepare.ts'), 'utf8');
@@ -46,22 +45,20 @@ assert.doesNotMatch(prepare, /debugger_hidden_main/);
 // Missing returns in student code must stay visible to clang (-Werror).
 assert.doesNotMatch(prepare, /ignored "-Wreturn-type"/);
 
-const nonce = 'abcd'.repeat(4);
-const marker = `__SIMPLETEST_V1__:${nonce}:`;
-const line = `${marker}{"type":"test_passed","key":"deadbeefdeadbeef","durationMs":1.5}`;
-assert.ok(line.startsWith(marker));
-const event = JSON.parse(line.slice(marker.length));
-assert.equal(event.type, 'test_passed');
-
-// Protocol decoder: blank lines adjacent to markers must not leak to the terminal.
-const { createTestReportDecoder } = await import(
-  pathToFileURL(join(root, 'lib/testing/protocol.ts')).href
-);
-const decoder = createTestReportDecoder(nonce);
-const visible = decoder.push(
-  `hello\n\n${marker}{"type":"run_started"}\n\n${marker}{"type":"run_finished","durationMs":1}\nbye\n`
-);
-assert.equal(visible, 'hello\nbye\n');
-assert.equal(decoder.state.finished, true);
+// Protocol decoder: one JSON event per line; anything else is ignored.
+const { createTestReport } = await import(pathToFileURL(join(root, 'lib/testing/protocol.ts')).href);
+const report = createTestReport();
+for (const line of [
+  '{"type":"run_started"}',
+  '{"type":"test_discovered","key":"k","name":"Vector size","origin":"provided","line":3}',
+  'not json',
+  '{"type":"test_passed","key":"k","durationMs":1.5}',
+  '{"type":"run_finished","durationMs":1}',
+]) {
+  report.push(line);
+}
+assert.equal(report.state.tests.length, 1);
+assert.equal(report.state.results.get('k')?.status, 'passed');
+assert.equal(report.state.finished, true);
 
 console.log('smoke-prepare: ok');

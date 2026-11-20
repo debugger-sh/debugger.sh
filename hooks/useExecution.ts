@@ -1,28 +1,18 @@
 'use client';
 
-import { Engine } from 'debugger-sh';
+import { Pipe, type Debugger, type Engine, type Frame, type Process, type Stop } from 'debugger-sh';
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { LANGS, type Lang } from '@/components/constants';
-import type {
-  DapResponse,
-  DapVariable,
-  Scope,
-  ScopeView,
-  StackFrame,
-} from '@/components/dap-types';
+import type { DapVariable, ScopeView, StackFrame } from '@/components/dap-types';
 import type { TerminalHandle } from '@/components/Terminal';
+import { getEngine, warmCppToolchain } from '@/lib/engine';
 import { toDebugFrame } from '@/lib/telemetry/map';
 import { Telemetry } from '@/lib/telemetry/client';
 import type { TestCase } from '@/lib/telemetry/types';
-import { loadStanfordArtifacts } from '@/lib/stanford/loadArtifacts';
-import { mergeDirNodes, pathsToDirNode } from '@/lib/stanford/fsTree';
+import { mountStanfordArtifacts, stanfordCppOptions } from '@/lib/stanford/loadArtifacts';
 import { prepareCppRun } from '@/lib/testing/prepare';
-import {
-  createTestReportDecoder,
-  type TestResult,
-  type TestRunState,
-} from '@/lib/testing/protocol';
+import { createTestReport, type TestRunState } from '@/lib/testing/protocol';
 
 /** SimpleTest runner / registry frames — hide from the call stack while debugging tests. */
 function isSimpleTestHarnessFrame(frame: StackFrame): boolean {
@@ -51,8 +41,7 @@ function isMainSource(
 
 type StopReason = 'breakpoint' | 'step' | 'exception' | 'pause';
 
-function mapStopReason(msg: unknown): StopReason {
-  const reason = (msg as { body?: { reason?: string } }).body?.reason ?? '';
+function mapStopReason(reason: string): StopReason {
   if (reason === 'step') return 'step';
   if (reason === 'exception') return 'exception';
   if (reason === 'pause') return 'pause';
@@ -60,13 +49,17 @@ function mapStopReason(msg: unknown): StopReason {
   return 'pause';
 }
 
-function testsFrom(decoder: { state: TestRunState } | null): TestCase[] | undefined {
-  if (!decoder) return undefined;
-  const { tests, results } = decoder.state;
-  if (tests.length === 0 && results.size === 0) return undefined;
+/** A copy of the test state that React sees as new. */
+function snapshot(state: TestRunState): TestRunState {
+  return { ...state, results: new Map(state.results) };
+}
+
+function testsFrom(state: TestRunState): TestCase[] {
+  const { tests, results } = state;
   const cases: TestCase[] = [];
   const seen = new Set<string>();
-  const push = (name: string, result: TestResult | undefined, fallbackLine?: number) => {
+  const push = (name: string, key: string, fallbackLine?: number) => {
+    const result = results.get(key);
     const row: TestCase = { name, passed: result?.status === 'passed' };
     if (result?.expected) row.expected = result.expected;
     if (result?.actual) row.actual = result.actual;
@@ -77,12 +70,46 @@ function testsFrom(decoder: { state: TestRunState } | null): TestCase[] | undefi
   };
   for (const info of tests) {
     seen.add(info.key);
-    push(info.name, results.get(info.key), info.line);
+    push(info.name, info.key, info.line);
   }
-  for (const result of results.values()) {
-    if (!seen.has(result.key)) push(result.key, result);
+  for (const key of results.keys()) {
+    if (!seen.has(key)) push(key, key);
   }
   return cases;
+}
+
+/**
+ * Writes `code` into the engine and starts it. C++ programs are built against the
+ * Stanford library; programs with SimpleTest cases report results on `tests`.
+ */
+async function start(
+  engine: Engine,
+  lang: Lang,
+  code: string,
+  debug: boolean
+): Promise<{ proc: Process; tests?: Pipe }> {
+  // `sources` are globs relative to the root, so they use the bare file name.
+  const { fsKey, sourcePath } = LANGS[lang];
+  if (lang === 'python') {
+    await engine.fs.writeFile(sourcePath, code);
+    return { proc: engine.run('python', [sourcePath], { debug, stdin: true }) };
+  }
+  if (lang === 'rust') {
+    await engine.fs.writeFile(sourcePath, code);
+    return { proc: engine.run('rust', { sources: [fsKey], debug, stdin: true }) };
+  }
+  const prepared = prepareCppRun(code, sourcePath);
+  await mountStanfordArtifacts(engine);
+  await engine.fs.writeFile(sourcePath, prepared.source);
+  const tests = prepared.hasTests ? new Pipe() : undefined;
+  const proc = engine.run('cpp', {
+    ...stanfordCppOptions,
+    sources: [fsKey],
+    debug,
+    stdin: true,
+    devices: tests ? { '/dev/simpletest': tests } : undefined,
+  });
+  return { proc, tests };
 }
 
 export type UseExecutionOptions = {
@@ -119,6 +146,8 @@ export type ExecutionApi = {
   applyBreakpoints: (breakpoints: ReadonlySet<number>) => void;
 };
 
+const ignore = () => undefined;
+
 export function useExecution({
   terminalRef,
 }: UseExecutionOptions): ExecutionApi {
@@ -127,119 +156,76 @@ export function useExecution({
   const [stoppedLine, setStoppedLine] = useState<number | null>(null);
   const [revealSeq, setRevealSeq] = useState(0);
   const [revealFlash, setRevealFlash] = useState(false);
-  const [frames, setFrames] = useState<StackFrame[]>([]);
+  const [frames, setFrames] = useState<Frame[]>([]);
   const [selectedFrameId, setSelectedFrameId] = useState<number | null>(null);
   const [scopes, setScopes] = useState<ScopeView[]>([]);
   const [debugLoading, setDebugLoading] = useState(false);
   const [testState, setTestState] = useState<TestRunState | null>(null);
 
-  const runtimeRef = useRef<Engine | null>(null);
-  /** One Engine per language — recreating each Run re-fetches ~80MB of toolchain. */
-  const enginesRef = useRef<Partial<Record<Lang, Engine>>>({});
-  const engineInitRef = useRef<Partial<Record<Lang, Promise<Engine>>>>({});
-  const priorRunRef = useRef<Promise<unknown> | null>(null);
+  /** The running process, or null between runs. */
+  const procRef = useRef<Process | null>(null);
   const isRunningRef = useRef(false);
-  const dapSeqRef = useRef(1);
-  const ioCleanupRef = useRef<(() => void) | null>(null);
   const stdinDisposeRef = useRef<(() => void) | null>(null);
   const breakpointsRef = useRef<ReadonlySet<number>>(new Set());
   const langRef = useRef<Lang>('c');
-  const testDecoderRef = useRef<ReturnType<typeof createTestReportDecoder> | null>(null);
   const testStateRafRef = useRef<number | null>(null);
   const stdoutBufferRef = useRef('');
-  /** Bumped on each `stopped` (and when auto-skipping library stops) so twin refreshes stay coherent. */
-  const debugRefreshGenRef = useRef(0);
   const stopReasonRef = useRef<StopReason>('pause');
   const autoSkipStopRef = useRef(false);
   /** Caps just-my-code `next` skips if we somehow never re-enter the main file. */
   const librarySkipRef = useRef(0);
-  const emittedStopGenRef = useRef(-1);
-  /** Last stop we already asked the editor to reveal, so the twin refresh does not flash twice. */
-  const revealedStopKeyRef = useRef('');
-  const getEngine = useCallback(async (lang: Lang): Promise<Engine> => {
-    const existing = enginesRef.current[lang];
-    if (existing) return existing;
-    let pending = engineInitRef.current[lang];
-    if (!pending) {
-      pending = Engine.create(lang as Parameters<typeof Engine.create>[0]).then((engine) => {
-        enginesRef.current[lang] = engine;
-        return engine;
-      });
-      engineInitRef.current[lang] = pending;
-    }
-    return pending;
+
+  // Warm the C++ toolchain + Stanford library as soon as the IDE mounts.
+  useEffect(() => {
+    void getEngine()
+      .then((engine) => Promise.all([warmCppToolchain(), mountStanfordArtifacts(engine)]))
+      .catch(ignore);
   }, []);
 
-  // Warm the C++ toolchain HTTP cache + Stanford artifacts as soon as the IDE mounts.
-  useEffect(() => {
-    void getEngine('c');
-    void loadStanfordArtifacts();
-  }, [getEngine]);
+  const currentDebugger = () => procRef.current?.debugger;
 
-  const dapSend = useCallback(
-    <T>(command: string, args: Record<string, unknown>) => {
-      const rt = runtimeRef.current;
-      if (!rt) return null;
-      const res = rt.debugger.send({
-        type: 'request',
-        seq: dapSeqRef.current++,
-        command,
-        arguments: args,
-      });
-      return res as DapResponse<T> | null;
-    },
-    []
-  );
-
-  const sendBreakpoints = useCallback(() => {
+  const sendBreakpoints = useCallback(async () => {
     const lines = Array.from(breakpointsRef.current).sort((a, b) => a - b);
-    dapSend('setBreakpoints', {
-      source: { path: LANGS[langRef.current].sourcePath },
-      breakpoints: lines.map((line) => ({ line })),
-    });
-  }, [dapSend]);
+    await currentDebugger()?.setBreakpoints(
+      LANGS[langRef.current].sourcePath,
+      lines.map((line) => ({ line }))
+    );
+  }, []);
 
-  /** Steps 5–8 in the engine DAP lifecycle; returns true once the worker is unblocked. */
-  const completeDapHandshake = useCallback((): boolean => {
-    sendBreakpoints();
-    dapSend('setExceptionBreakpoints', { filters: [] });
-    const res = dapSend('configurationDone', {}) as DapResponse<unknown> | null;
-    return res?.success === true;
-  }, [dapSend, sendBreakpoints]);
+  const loadFrame = useCallback((frame: Frame): ScopeView[] => {
+    let views: ScopeView[] = [];
+    try {
+      views = frame.scopes().map((scope) => ({ name: scope.name, variables: scope.vars() }));
+    } catch {
+      // The process exited while we were looking.
+    }
+    setScopes(views);
+    return views;
+  }, []);
 
-  const loadFrame = useCallback(
-    (frameId: number): ScopeView[] => {
-      const scopeRes = dapSend<{ scopes: Scope[] }>('scopes', { frameId });
-      const list = scopeRes?.body?.scopes ?? [];
-      const views: ScopeView[] = list.map((sc) => {
-        const v = dapSend<{ variables: DapVariable[] }>('variables', {
-          variablesReference: sc.variablesReference,
-        });
-        return { name: sc.name, variables: v?.body?.variables ?? [] };
-      });
-      setScopes(views);
-      return views;
-    },
-    [dapSend]
-  );
+  /** Clears the paused location, e.g. when the program resumes. */
+  const clearStop = useCallback(() => {
+    setIsPaused(false);
+    setStoppedLine(null);
+    setFrames([]);
+    setSelectedFrameId(null);
+    setScopes([]);
+  }, []);
 
-  const refreshDebugSession = useCallback(
-    (expectedGen: number) => {
-      // Twin timeouts from scheduleDebugRefresh share one gen; skip stale ones.
-      if (expectedGen !== debugRefreshGenRef.current) return;
+  const clearDebug = useCallback(() => {
+    clearStop();
+    setDebugLoading(false);
+  }, [clearStop]);
+
+  const showStop = useCallback(
+    (dbg: Debugger, stop: Stop) => {
+      if (currentDebugger() !== dbg) return;
+      if (!autoSkipStopRef.current) stopReasonRef.current = mapStopReason(stop.reason);
+      autoSkipStopRef.current = false;
+      setIsPaused(true);
       setDebugLoading(true);
       try {
-        const res = dapSend<{ stackFrames: StackFrame[] }>('stackTrace', {
-          threadId: 1,
-        });
-        if (!res?.success) return;
-        if (expectedGen !== debugRefreshGenRef.current) return;
-
-        const raw = res.body?.stackFrames ?? [];
-        // Stack can lag the stopped event — leave the twin refresh to retry.
-        if (raw.length === 0) return;
-
-        const mainPath = LANGS[langRef.current].sourcePath;
+        const raw = stop.frames();
 
         // Just-my-code: never surface a pause whose PC is outside the main file
         // (Stanford headers, libc++, SimpleTest harness, etc.).
@@ -250,22 +236,16 @@ export function useExecution({
         // first. `stepOut` from there returns past the rest of the statement and
         // skips user callees such as printContact; `next` finishes the library
         // call and then enters the next step-in target in user code.
-        if (!isMainSource(raw[0]?.source?.path, mainPath)) {
-          // Invalidate sibling refresh so we don't double-resume.
-          debugRefreshGenRef.current += 1;
+        if (raw.length > 0 && !isMainSource(raw[0].source?.path, LANGS[langRef.current].sourcePath)) {
           // Keep the original stop reason across the automatic skip.
           autoSkipStopRef.current = true;
           if (librarySkipRef.current++ >= 64) {
             librarySkipRef.current = 0;
-            dapSend('continue', { threadId: 1 });
+            dbg.continue().catch(ignore);
           } else {
-            dapSend('next', { threadId: 1 });
+            dbg.stepOver().catch(ignore);
           }
-          setIsPaused(false);
-          setStoppedLine(null);
-          setFrames([]);
-          setSelectedFrameId(null);
-          setScopes([]);
+          clearStop();
           return;
         }
         librarySkipRef.current = 0;
@@ -282,118 +262,71 @@ export function useExecution({
         setSelectedFrameId(fs[0].id);
         const topLine = fs[0].line > 0 ? fs[0].line : null;
         setStoppedLine(topLine);
-        const revealKey = `${expectedGen}:${fs[0].id}:${topLine ?? ''}`;
-        if (topLine != null && revealedStopKeyRef.current !== revealKey) {
-          revealedStopKeyRef.current = revealKey;
+        if (topLine != null) {
           setRevealFlash(true);
           setRevealSeq((n) => n + 1);
         }
-        const views = loadFrame(fs[0].id);
-        if (emittedStopGenRef.current !== expectedGen) {
-          emittedStopGenRef.current = expectedGen;
-          const line = fs[0].line;
-          Telemetry.log('debug_stop', {
-            reason: stopReasonRef.current,
-            ...(line > 0 ? { line } : {}),
-            frame_count: fs.length,
-            top_frame: toDebugFrame(0, fs[0].name, views),
-          });
-        }
+        const views = loadFrame(fs[0]);
+        Telemetry.log('debug_stop', {
+          reason: stopReasonRef.current,
+          ...(topLine != null ? { line: topLine } : {}),
+          frame_count: fs.length,
+          top_frame: toDebugFrame(0, fs[0].name, views),
+        });
+      } catch {
+        // The process exited while we were looking.
       } finally {
         setDebugLoading(false);
       }
     },
-    [dapSend, loadFrame]
+    [clearStop, loadFrame]
   );
 
-  const scheduleDebugRefresh = useCallback(() => {
-    const gen = debugRefreshGenRef.current;
-    const run = () => refreshDebugSession(gen);
-    window.setTimeout(run, 0);
-    window.setTimeout(run, 50);
-  }, [refreshDebugSession]);
-
-  const clearDebug = useCallback(() => {
-    setIsPaused(false);
-    setStoppedLine(null);
-    setFrames([]);
-    setSelectedFrameId(null);
-    setScopes([]);
-    setDebugLoading(false);
-  }, []);
-
   const teardown = useCallback(() => {
-    ioCleanupRef.current?.();
-    ioCleanupRef.current = null;
     stdinDisposeRef.current?.();
     stdinDisposeRef.current = null;
-    runtimeRef.current = null;
+    procRef.current = null;
     isRunningRef.current = false;
-    testDecoderRef.current = null;
   }, []);
 
   const wireStdout = useCallback(
-    (rt: Engine) => {
-      const stdoutDecoder = new TextDecoder();
-      const stderrDecoder = new TextDecoder();
-      // Buffer program output and flush via terminalRef on each chunk. Reading
-      // the ref at write-time avoids a stale xterm handle if React remounts the
-      // terminal while the run is in flight.
-      const onData = (kind: 'stdout' | 'stderr', decoder: TextDecoder) => (chunk: Uint8Array) => {
-        const text = decoder.decode(chunk);
-        const filtered = testDecoderRef.current
-          ? testDecoderRef.current.push(text)
-          : text;
-        if (filtered) {
-          Telemetry.log('run_io', { kind, data: filtered });
-          // Keep a durable copy — xterm can remount when the Tests panel
-          // updates, which would otherwise drop live writes.
-          stdoutBufferRef.current += filtered.replace(/\r?\n/g, '\r\n');
-          terminalRef.current?.write(filtered.replace(/\r?\n/g, '\r\n'));
-        }
-        if (testDecoderRef.current) {
-          if (testStateRafRef.current == null) {
-            testStateRafRef.current = requestAnimationFrame(() => {
-              testStateRafRef.current = null;
-              const decoder = testDecoderRef.current;
-              if (!decoder) return;
-              setTestState({
-                ...decoder.state,
-                results: new Map(decoder.state.results),
-              });
-            });
-          }
-        }
+    (proc: Process) => {
+      // Reading terminalRef at write-time avoids a stale xterm handle if React
+      // remounts the terminal while the run is in flight.
+      const write = (kind: 'stdout' | 'stderr') => (text: string) => {
+        if (procRef.current !== proc) return;
+        Telemetry.log('run_io', { kind, data: text });
+        const output = text.replace(/\r?\n/g, '\r\n');
+        // Keep a durable copy — xterm can remount when the Tests panel
+        // updates, which would otherwise drop live writes.
+        stdoutBufferRef.current += output;
+        terminalRef.current?.write(output);
       };
-      const onStdout = onData('stdout', stdoutDecoder);
-      const onStderr = onData('stderr', stderrDecoder);
-      rt.stdout.on('data', onStdout);
-      rt.stderr.on('data', onStderr);
-      ioCleanupRef.current = () => {
-        rt.stdout.off('data', onStdout);
-        rt.stderr.off('data', onStderr);
-      };
+      proc.stdout.on('text', write('stdout'));
+      proc.stderr.on('text', write('stderr'));
     },
     [terminalRef]
   );
 
   const wireStdin = useCallback(
-    (rt: Engine) => {
+    (proc: Process) => {
       const term = terminalRef.current;
       if (!term) return;
-      const encoder = new TextEncoder();
+      const send = (text: string) => {
+        if (!proc.stdin.closed) proc.stdin.write(text).catch(ignore);
+      };
       let buffer = '';
       stdinDisposeRef.current = term.onData((data) => {
         if (!isRunningRef.current) return;
         Telemetry.log('run_io', { kind: 'stdin', data });
         if (data === '\x03') {
           term.write('^C\r\n');
-          rt.stop();
+          proc.kill();
           return;
         }
         if (data === '\x04') {
           term.write('^D\r\n');
-          void rt.stdin.write(encoder.encode('\x04'));
+          proc.stdin.close();
           buffer = '';
           return;
         }
@@ -404,7 +337,7 @@ export function useExecution({
         }
         if (data === '\r') {
           term.write('\r\n');
-          void rt.stdin.write(encoder.encode(`${buffer}\n`));
+          send(`${buffer}\n`);
           buffer = '';
           return;
         }
@@ -423,21 +356,31 @@ export function useExecution({
     [terminalRef]
   );
 
+  /** Feeds SimpleTest events into `report`, refreshing the Tests panel once per frame. */
+  const readTests = useCallback(
+    async (proc: Process, pipe: Pipe, report: ReturnType<typeof createTestReport>) => {
+      for await (const line of pipe.lines()) {
+        report.push(line);
+        testStateRafRef.current ??= requestAnimationFrame(() => {
+          testStateRafRef.current = null;
+          if (procRef.current === proc) setTestState(snapshot(report.state));
+        });
+      }
+    },
+    []
+  );
+
   const run = useCallback(
     async (code: string, breakpoints: ReadonlySet<number>, lang: Lang) => {
       if (isRunningRef.current) return;
       Telemetry.log('run_start');
-      let finish: {
-        reason: 'completed' | 'error' | 'stopped';
-        exit_code?: number;
-        build_ms?: number;
-        run_ms?: number;
-      } = { reason: 'error' };
+      let finish: { reason: 'completed' | 'error' | 'stopped'; exit_code?: number } = {
+        reason: 'error',
+      };
       const started = performance.now();
       langRef.current = lang;
-      const { fsKey } = LANGS[lang];
       breakpointsRef.current = breakpoints;
-      // Prefer a fast non-debug build when nothing needs DWARF / instrumentation.
+      // Only instrument for debugging when there is somewhere to stop.
       const wantsDebug = LANGS[lang].debug && breakpoints.size > 0;
       teardown();
       clearDebug();
@@ -447,6 +390,7 @@ export function useExecution({
       isRunningRef.current = true;
       terminalRef.current?.clear();
       terminalRef.current?.focus();
+      let report: ReturnType<typeof createTestReport> | null = null;
 
       try {
         if (typeof window !== 'undefined' && !window.crossOriginIsolated) {
@@ -456,180 +400,56 @@ export function useExecution({
           );
         }
 
-        // A reused Engine returns the prior promise if run() is still settling.
-        if (priorRunRef.current) {
-          await priorRunRef.current.catch(() => undefined);
+        const { proc, tests } = await start(await getEngine(), lang, code, wantsDebug);
+        procRef.current = proc;
+        wireStdout(proc);
+        wireStdin(proc);
+
+        let reading: Promise<void> | undefined;
+        if (tests) {
+          report = createTestReport();
+          reading = readTests(proc, tests, report);
         }
 
-        const rt = await getEngine(lang);
-        runtimeRef.current = rt;
-        if (lang === 'python') rt.debugger.filterInternals = true;
-        dapSeqRef.current = 1;
-
-        wireStdout(rt);
-        wireStdin(rt);
-        rt.debugger.enabled = wantsDebug;
-
-        if (lang === 'c') {
-          const prepared = prepareCppRun(code, fsKey);
-          const stanford = await loadStanfordArtifacts();
-          rt.fs = mergeDirNodes(
-            pathsToDirNode(stanford.fsFiles),
-            pathsToDirNode(prepared.files),
-          );
-          rt.binaryFiles = { ...stanford.binaryFiles };
-          const studentSourcePath = `/${fsKey}`;
-          rt.cppArtifacts = {
-            ...stanford.cppArtifacts,
-            sources: prepared.hasTests
-              ? [studentSourcePath, ...prepared.extraSources]
-              : [studentSourcePath],
-          };
-          if (prepared.hasTests) {
-            testDecoderRef.current = createTestReportDecoder(prepared.nonce);
-            // Defer React state updates until after the engine is wired so a
-            // re-render cannot remount the terminal mid-setup.
-          }
-        } else {
-          rt.fs = { [fsKey]: code };
+        const dbg = proc.debugger;
+        if (dbg) {
+          dbg.on('stop', (stop) => showStop(dbg, stop));
+          // Waits for the program to be built and loaded, then starts it.
+          void sendBreakpoints()
+            .then(() => dbg.continue())
+            .catch(ignore);
         }
 
-        const handshakeDoneRef = { current: !wantsDebug };
-        const tryDapHandshake = () => {
-          if (handshakeDoneRef.current) return true;
-          if (completeDapHandshake()) {
-            handshakeDoneRef.current = true;
-            return true;
-          }
-          return false;
-        };
-
-        const onDebuggerEvent = (msg: unknown) => {
-          const m = msg as { type?: string; event?: string };
-          if (m?.type !== 'event') return;
-          if (m.event === 'initialized') {
-            tryDapHandshake();
-          } else if (m.event === 'stopped') {
-            if (!autoSkipStopRef.current) stopReasonRef.current = mapStopReason(msg);
-            autoSkipStopRef.current = false;
-            debugRefreshGenRef.current += 1;
-            setIsPaused(true);
-            scheduleDebugRefresh();
-          } else if (m.event === 'terminated') {
-            clearDebug();
-          }
-        };
-        if (wantsDebug) {
-          rt.debugger.on('event', onDebuggerEvent);
-        }
-
-        const runPromise = rt.run();
-        priorRunRef.current = runPromise;
-        let runSettled = false;
-        void runPromise.finally(() => {
-          runSettled = true;
-          if (wantsDebug) rt.debugger.off('event', onDebuggerEvent);
-        });
-
-        if (wantsDebug) {
-          dapSend('initialize', {});
-          const handshakeDeadline = Date.now() + 120_000;
-          while (!handshakeDoneRef.current && !runSettled) {
-            if (tryDapHandshake()) break;
-            if (Date.now() >= handshakeDeadline) {
-              throw new Error(
-                'DAP handshake timed out after 120s — worker may be blocked or still ' +
-                  'fetching toolchain WASM. Rebuild the engine with `npm run build` (not tools/dev).'
-              );
-            }
-            await new Promise((resolve) => setTimeout(resolve, 10));
-          }
-        }
-
-        const result = await runPromise;
-        if (result.type === 'completed') {
-          finish = {
-            reason: 'completed',
-            exit_code: result.exitCode,
-            build_ms: Math.round(result.timing.buildMs),
-            run_ms: Math.round(result.timing.runMs),
-          };
-        } else if (result.type === 'stopped') {
-          finish = { reason: 'stopped' };
-        } else {
-          finish = { reason: 'error' };
-        }
-        if (testDecoderRef.current) {
-          const rest = testDecoderRef.current.finish();
-          if (rest) {
-            Telemetry.log('run_io', { kind: 'stdout', data: rest });
-            stdoutBufferRef.current += rest.replace(/\r?\n/g, '\r\n');
-          }
-          const nextState = {
-            ...testDecoderRef.current.state,
-            results: new Map(testDecoderRef.current.state.results),
-          };
+        const result = await proc;
+        await reading;
+        finish = result.killed
+          ? { reason: 'stopped' }
+          : { reason: 'completed', exit_code: result.exitCode };
+        if (report) {
+          const nextState = snapshot(report.state);
           const failuresExplainExit = [...nextState.results.values()].some(
             (r) => r.status === 'failed' || r.status === 'errored' || r.status === 'leaked',
           );
-          const couldntRun =
-            result.type === 'error' ||
-            (result.type === 'completed' &&
-              result.exitCode !== 0 &&
-              !failuresExplainExit);
-          if (couldntRun) {
+          if (!result.killed && result.exitCode !== 0 && !failuresExplainExit) {
             nextState.finished = true;
-            nextState.error =
-              "Couldn't run tests. Please see the Terminal for more info";
+            nextState.error = "Couldn't run tests. Please see the Terminal for more info";
           }
           setTestState(nextState);
         }
-        if (result.type === 'error') {
-          stdoutBufferRef.current += `\r\n[ide error] ${result.error.type}: ${result.error.message}\r\n`;
-        }
-        if (typeof window !== 'undefined') {
-          const timing =
-            result.type === 'completed'
-              ? result.timing
-              : { totalMs: null, buildMs: null, runMs: null };
-          (
-            window as Window & {
-              __ideRunTiming?: Record<string, unknown>;
-            }
-          ).__ideRunTiming = {
-            wallMs: Math.round(performance.now() - started),
-            wantsDebug,
-            ...timing,
-            resultType: result.type,
-            at: Date.now(),
-          };
-        }
       } catch (err) {
         stdoutBufferRef.current += `\r\n[ide error] ${err instanceof Error ? err.message : String(err)}\r\n`;
-        if (testDecoderRef.current) {
+        if (report) {
           setTestState({
-            ...testDecoderRef.current.state,
-            results: new Map(testDecoderRef.current.state.results),
+            ...snapshot(report.state),
             finished: true,
             error: "Couldn't run tests. Please see the Terminal for more info",
           });
         }
-        if (typeof window !== 'undefined') {
-          (
-            window as Window & {
-              __ideRunTiming?: Record<string, unknown>;
-            }
-          ).__ideRunTiming = {
-            wallMs: Math.round(performance.now() - started),
-            error: err instanceof Error ? err.message : String(err),
-            at: Date.now(),
-          };
-        }
       } finally {
-        const tests = testsFrom(testDecoderRef.current);
+        const tests = report ? testsFrom(report.state) : [];
         Telemetry.log('run_stop', {
           ...finish,
-          ...(tests && tests.length ? { tests } : {}),
+          ...(tests.length ? { tests } : {}),
         });
         const ms = Math.round(performance.now() - started);
         const term = terminalRef.current;
@@ -645,10 +465,9 @@ export function useExecution({
     },
     [
       clearDebug,
-      completeDapHandshake,
-      dapSend,
-      getEngine,
-      scheduleDebugRefresh,
+      readTests,
+      sendBreakpoints,
+      showStop,
       teardown,
       terminalRef,
       wireStdin,
@@ -657,7 +476,7 @@ export function useExecution({
   );
 
   const stop = useCallback(() => {
-    runtimeRef.current?.stop();
+    procRef.current?.kill();
     teardown();
     clearDebug();
     setIsRunning(false);
@@ -666,35 +485,28 @@ export function useExecution({
   const resume = useCallback(() => {
     if (!isRunningRef.current) return;
     Telemetry.log('debug_step', { kind: 'continue' });
-    dapSend('continue', { threadId: 1 });
-    setIsPaused(false);
-    setStoppedLine(null);
-    setFrames([]);
-    setSelectedFrameId(null);
-    setScopes([]);
-  }, [dapSend]);
+    currentDebugger()?.continue().catch(ignore);
+    clearStop();
+  }, [clearStop]);
 
-  const step = useCallback(
-    (command: 'next' | 'stepIn' | 'stepOut') => {
-      if (!isRunningRef.current) return;
-      Telemetry.log('debug_step', {
-        kind: command === 'next' ? 'over' : command === 'stepIn' ? 'in' : 'out',
-      });
-      setDebugLoading(true);
-      setScopes([]);
-      setFrames([]);
-      dapSend(command, { threadId: 1 });
-    },
-    [dapSend]
-  );
+  const step = useCallback((kind: 'over' | 'in' | 'out') => {
+    if (!isRunningRef.current) return;
+    Telemetry.log('debug_step', { kind });
+    setDebugLoading(true);
+    setScopes([]);
+    setFrames([]);
+    const dbg = currentDebugger();
+    const next = kind === 'over' ? dbg?.stepOver() : kind === 'in' ? dbg?.stepIn() : dbg?.stepOut();
+    next?.catch(ignore);
+  }, []);
 
   const selectFrame = useCallback(
     (id: number) => {
       setSelectedFrameId(id);
-      const views = loadFrame(id);
       const index = frames.findIndex((frame) => frame.id === id);
       const frame = index >= 0 ? frames[index] : undefined;
       if (!frame) return;
+      const views = loadFrame(frame);
       Telemetry.log('debug_frame', { frame: toDebugFrame(index, frame.name, views) });
       const inDocument =
         frame.line >= 1 &&
@@ -710,21 +522,26 @@ export function useExecution({
     [frames, loadFrame]
   );
 
-  const expandVariable = useCallback(
-    (ref: number): DapVariable[] => {
-      if (ref <= 0) return [];
-      const res = dapSend<{ variables: DapVariable[] }>('variables', {
-        variablesReference: ref,
+  const expandVariable = useCallback((ref: number): DapVariable[] => {
+    const dbg = currentDebugger();
+    if (ref <= 0 || !dbg) return [];
+    try {
+      const res = dbg.dap.send({
+        type: 'request',
+        seq: 0,
+        command: 'variables',
+        arguments: { variablesReference: ref },
       });
-      return res?.body?.variables ?? [];
-    },
-    [dapSend]
-  );
+      return res.success ? ((res.body as { variables?: DapVariable[] })?.variables ?? []) : [];
+    } catch {
+      return [];
+    }
+  }, []);
 
   const applyBreakpoints = useCallback(
     (breakpoints: ReadonlySet<number>) => {
       breakpointsRef.current = breakpoints;
-      if (runtimeRef.current) sendBreakpoints();
+      sendBreakpoints().catch(ignore);
     },
     [sendBreakpoints]
   );
@@ -743,9 +560,9 @@ export function useExecution({
     run,
     stop,
     resume,
-    stepOver: () => step('next'),
-    stepIn: () => step('stepIn'),
-    stepOut: () => step('stepOut'),
+    stepOver: () => step('over'),
+    stepIn: () => step('in'),
+    stepOut: () => step('out'),
     selectFrame,
     expandVariable,
     applyBreakpoints,

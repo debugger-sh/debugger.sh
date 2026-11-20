@@ -4,7 +4,7 @@
  * Requires: built CS106B artifacts (`npm run build:cs106b`) and playwright.
  */
 import assert from 'node:assert/strict';
-import { readdir, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -15,9 +15,6 @@ const files = {
   '/engine.js': ['text/javascript', await readFile(join(engineDist, 'debugger-sh.js'))],
   '/cs106b.tar.gz': ['application/gzip', await readFile(join(root, 'public/cs106b/cs106b.tar.gz'))],
 };
-for (const name of await readdir(join(engineDist, 'assets'))) {
-  files[`/assets/${name}`] = ['text/javascript', await readFile(join(engineDist, 'assets', name))];
-}
 const { simpleTestRunner } = await import(
   pathToFileURL(join(root, 'cs106b/generated/simpleTestRunner.ts')).href
 );

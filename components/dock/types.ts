@@ -87,11 +87,6 @@ export function collectGroups(node: DockNode, out: TabGroup[] = []): TabGroup[] 
   return out;
 }
 
-export function findGroup(node: DockNode, groupId: string): TabGroup | null {
-  if (isTabGroup(node)) return node.id === groupId ? node : null;
-  return findGroup(node.children[0], groupId) ?? findGroup(node.children[1], groupId);
-}
-
 export function visiblePanes(state: DockState): Set<PaneId> {
   const set = new Set<PaneId>();
   for (const g of collectGroups(state.root)) {

@@ -1,8 +1,6 @@
-/** Minimal stdout decoder for SimpleTest markers (`__SIMPLETEST_V1__:<nonce>:<json>`). */
+/** Decoder for SimpleTest events: one JSON object per line, read from the `/dev/simpletest` pipe. */
 
-export const TEST_REPORT_PREFIX = '__SIMPLETEST_V1__:';
-
-export type TestOrigin = 'student' | 'provided' | 'external';
+type TestOrigin = 'student' | 'provided' | 'external';
 
 export type TestInfo = {
   key: string;
@@ -13,7 +11,7 @@ export type TestInfo = {
   line?: number;
 };
 
-export type TestResultStatus = 'passed' | 'failed' | 'errored' | 'leaked' | 'running';
+type TestResultStatus = 'passed' | 'failed' | 'errored' | 'leaked' | 'running';
 
 export type TestResult = {
   key: string;
@@ -54,16 +52,8 @@ function pair(value: unknown): { expression: string; value: string } | undefined
   return { expression, value: text };
 }
 
-export function createEmptyTestRunState(): TestRunState {
-  return { tests: [], results: new Map(), finished: false };
-}
-
-export function createTestReportDecoder(nonce: string) {
-  const marker = `${TEST_REPORT_PREFIX}${nonce}:`;
-  let buffer = '';
-  /** Blank lines held until we know the next line isn't a protocol marker. */
-  let pendingBlank = '';
-  const state = createEmptyTestRunState();
+export function createTestReport() {
+  const state: TestRunState = { tests: [], results: new Map(), finished: false };
 
   const apply = (event: RawEvent) => {
     const type = asString(event.type);
@@ -126,48 +116,13 @@ export function createTestReportDecoder(nonce: string) {
 
   return {
     state,
-    /** Returns text that should still go to the terminal (markers stripped). */
-    push(chunk: string): string {
-      buffer += chunk;
-      let output = '';
-      let newline: number;
-      while ((newline = buffer.indexOf('\n')) >= 0) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
-        const bare = line.replace(/\r$/, '');
-        if (bare.startsWith(marker)) {
-          // Drop blank lines that only separated protocol frames from real output.
-          pendingBlank = '';
-          try {
-            apply(JSON.parse(bare.slice(marker.length)) as RawEvent);
-          } catch {
-            output += line + '\n';
-          }
-        } else if (bare === '') {
-          pendingBlank += '\n';
-        } else {
-          output += pendingBlank + line + '\n';
-          pendingBlank = '';
-        }
+    /** Applies one line of the event stream. Malformed lines are ignored. */
+    push(line: string) {
+      try {
+        apply(JSON.parse(line) as RawEvent);
+      } catch {
+        /* not an event */
       }
-      return output;
-    },
-    finish(): string {
-      // Drop trailing blank lines held for marker detection — they aren't program output.
-      pendingBlank = '';
-      if (!buffer) return '';
-      const line = buffer;
-      buffer = '';
-      const bare = line.replace(/\r$/, '');
-      if (bare.startsWith(marker)) {
-        try {
-          apply(JSON.parse(bare.slice(marker.length)) as RawEvent);
-          return '';
-        } catch {
-          return line;
-        }
-      }
-      return line;
     },
   };
 }

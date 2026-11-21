@@ -3,7 +3,7 @@
 import { ArrowDownToDot, ArrowUpFromDot, RedoDot } from 'lucide-react';
 import { Tooltip } from './Tooltip';
 
-export type RunStopProps = {
+type RunStopProps = {
   isRunning: boolean;
   onRun: () => void;
   onStop: () => void;
@@ -54,13 +54,13 @@ export function DebugControls({
       </button>
       <div className="ide-debug-group">
         <ActionBtn label="Step over" onClick={onStepOver}>
-          <StepOverIcon />
+          <RedoDot {...stepIconProps} />
         </ActionBtn>
         <ActionBtn label="Step into" onClick={onStepIn}>
-          <StepIntoIcon />
+          <ArrowDownToDot {...stepIconProps} />
         </ActionBtn>
         <ActionBtn label="Step out" onClick={onStepOut}>
-          <StepOutIcon />
+          <ArrowUpFromDot {...stepIconProps} />
         </ActionBtn>
       </div>
     </div>
@@ -112,14 +112,3 @@ const stepIconProps = {
   'aria-hidden': true as const,
 };
 
-function StepOverIcon() {
-  return <RedoDot {...stepIconProps} />;
-}
-
-function StepIntoIcon() {
-  return <ArrowDownToDot {...stepIconProps} />;
-}
-
-function StepOutIcon() {
-  return <ArrowUpFromDot {...stepIconProps} />;
-}

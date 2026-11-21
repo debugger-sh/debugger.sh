@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 
 import type { TestInfo, TestResult, TestRunState } from '@/lib/testing/protocol';
 
-export type TestsPanelProps = {
+type TestsPanelProps = {
   state: TestRunState | null;
   isRunning: boolean;
 };

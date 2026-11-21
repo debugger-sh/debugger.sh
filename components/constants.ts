@@ -1,13 +1,12 @@
 export type Lang = 'c' | 'python' | 'rust';
 
-export type LangConfig = {
+type LangConfig = {
   label: string;
+  /** The source file, relative to the engine's root (toolchains take relative globs). */
   fsKey: string;
-  /** DAP `setBreakpoints` path — must match the worker's virtual source path. */
+  /** The source file's absolute path, as the debugger reports it. */
   sourcePath: string;
   defaultCode: string;
-  /** Whether this language supports breakpoints / the DAP debugger. */
-  debug: boolean;
 };
 
 export const LANGS: Record<Lang, LangConfig> = {
@@ -37,7 +36,6 @@ int main() {
   return 0;
 }
 `,
-    debug: true,
   },
   python: {
     label: 'Python',
@@ -45,7 +43,6 @@ int main() {
     sourcePath: '/main.py',
     defaultCode: `print("Hello, world!")
 `,
-    debug: true,
   },
   rust: {
     label: 'Rust',
@@ -55,12 +52,5 @@ int main() {
     println!("Hello, world!");
 }
 `,
-    debug: true,
   },
 };
-
-/** @deprecated Use LANGS[lang].sourcePath instead. */
-export const SOURCE_PATH = LANGS.c.sourcePath;
-
-/** @deprecated Use LANGS.c.defaultCode instead. */
-export const defaultCode = LANGS.c.defaultCode;

@@ -51,7 +51,7 @@ import {
   visiblePanes,
 } from "./types";
 
-export type DockWorkspaceProps = {
+type DockWorkspaceProps = {
   panes: Record<PaneId, ReactNode>;
   layout: DockState;
   onLayoutChange: (layout: DockState) => void;
@@ -396,114 +396,50 @@ function DropHighlight({
   );
 }
 
-function DockNodeView({
-  node,
-  closed,
-  visibleCount,
-  hover,
-  registerBody,
-  registerLeaf,
-  registerBar,
-  registerHost,
-  onSelect,
-  onClose,
-  onOpen,
-  onSplitSizes,
-}: {
-  node: DockNode;
+type Register<K> = (key: K, el: HTMLElement | null) => void;
+
+type NodeProps = {
   closed: PaneId[];
   visibleCount: number;
   hover: HoverTarget | null;
-  registerBody: (groupId: string, el: HTMLElement | null) => void;
-  registerLeaf: (groupId: string, el: HTMLElement | null) => void;
-  registerBar: (groupId: string, el: HTMLElement | null) => void;
-  registerHost: (pane: PaneId, el: HTMLElement | null) => void;
+  registerBody: Register<string>;
+  registerLeaf: Register<string>;
+  registerBar: Register<string>;
+  registerHost: Register<PaneId>;
   onSelect: (groupId: string, pane: PaneId) => void;
   onClose: (groupId: string, pane: PaneId) => void;
   onOpen: (groupId: string, pane: PaneId) => void;
   onSplitSizes: (splitId: string, sizes: [number, number]) => void;
-}) {
+};
+
+function DockNodeView({ node, ...props }: NodeProps & { node: DockNode }) {
   if (isTabGroup(node)) {
-    const overThis = hover?.groupId === node.id;
+    const { hover } = props;
     return (
       <LeafGroup
         group={node}
-        closed={closed}
-        canClose={visibleCount > 1}
+        closed={props.closed}
+        canClose={props.visibleCount > 1}
         insertIndex={
-          overThis && hover.zone === "tabbar" ? hover.insertIndex ?? null : null
+          hover?.groupId === node.id && hover.zone === "tabbar" ? hover.insertIndex ?? null : null
         }
-        registerBody={registerBody}
-        registerLeaf={registerLeaf}
-        registerBar={registerBar}
-        registerHost={registerHost}
-        onSelect={(pane) => onSelect(node.id, pane)}
-        onClose={(pane) => onClose(node.id, pane)}
-        onOpen={(pane) => onOpen(node.id, pane)}
+        registerBody={props.registerBody}
+        registerLeaf={props.registerLeaf}
+        registerBar={props.registerBar}
+        registerHost={props.registerHost}
+        onSelect={(pane) => props.onSelect(node.id, pane)}
+        onClose={(pane) => props.onClose(node.id, pane)}
+        onOpen={(pane) => props.onOpen(node.id, pane)}
       />
     );
   }
-  return (
-    <SplitView
-      split={node}
-      closed={closed}
-      visibleCount={visibleCount}
-      hover={hover}
-      registerBody={registerBody}
-      registerLeaf={registerLeaf}
-      registerBar={registerBar}
-      registerHost={registerHost}
-      onSelect={onSelect}
-      onClose={onClose}
-      onOpen={onOpen}
-      onSplitSizes={onSplitSizes}
-    />
-  );
+  return <SplitView split={node} {...props} />;
 }
 
-function SplitView({
-  split,
-  closed,
-  visibleCount,
-  hover,
-  registerBody,
-  registerLeaf,
-  registerBar,
-  registerHost,
-  onSelect,
-  onClose,
-  onOpen,
-  onSplitSizes,
-}: {
-  split: SplitNode;
-  closed: PaneId[];
-  visibleCount: number;
-  hover: HoverTarget | null;
-  registerBody: (groupId: string, el: HTMLElement | null) => void;
-  registerLeaf: (groupId: string, el: HTMLElement | null) => void;
-  registerBar: (groupId: string, el: HTMLElement | null) => void;
-  registerHost: (pane: PaneId, el: HTMLElement | null) => void;
-  onSelect: (groupId: string, pane: PaneId) => void;
-  onClose: (groupId: string, pane: PaneId) => void;
-  onOpen: (groupId: string, pane: PaneId) => void;
-  onSplitSizes: (splitId: string, sizes: [number, number]) => void;
-}) {
+function SplitView({ split, ...props }: NodeProps & { split: SplitNode }) {
   const orientation = split.dir === "h" ? "horizontal" : "vertical";
   /* 1px stroke — hover thickens via CSS, no gutter padding. */
   const sepStyle = split.dir === "h" ? { width: 1 } : { height: 1 };
-  const childProps = {
-    closed,
-    visibleCount,
-    hover,
-    registerBody,
-    registerLeaf,
-    registerBar,
-    registerHost,
-    onSelect,
-    onClose,
-    onOpen,
-    onSplitSizes,
-  };
   const defaultLayout = {
     [split.children[0].id]: split.sizes[0],
     [split.children[1].id]: split.sizes[1],
@@ -519,16 +455,16 @@ function SplitView({
         const a = next[split.children[0].id];
         const b = next[split.children[1].id];
         if (a == null || b == null) return;
-        onSplitSizes(split.id, [a, b]);
+        props.onSplitSizes(split.id, [a, b]);
       }}
       style={{ height: "100%", width: "100%", minHeight: 0, minWidth: 0 }}
     >
       <Panel id={split.children[0].id} minSize="12%">
-        <DockNodeView node={split.children[0]} {...childProps} />
+        <DockNodeView node={split.children[0]} {...props} />
       </Panel>
       <Separator id={`${split.id}-sep`} style={sepStyle} />
       <Panel id={split.children[1].id} minSize="12%">
-        <DockNodeView node={split.children[1]} {...childProps} />
+        <DockNodeView node={split.children[1]} {...props} />
       </Panel>
     </Group>
   );
@@ -551,10 +487,10 @@ function LeafGroup({
   closed: PaneId[];
   canClose: boolean;
   insertIndex: number | null;
-  registerBody: (groupId: string, el: HTMLElement | null) => void;
-  registerLeaf: (groupId: string, el: HTMLElement | null) => void;
-  registerBar: (groupId: string, el: HTMLElement | null) => void;
-  registerHost: (pane: PaneId, el: HTMLElement | null) => void;
+  registerBody: Register<string>;
+  registerLeaf: Register<string>;
+  registerBar: Register<string>;
+  registerHost: Register<PaneId>;
   onSelect: (pane: PaneId) => void;
   onClose: (pane: PaneId) => void;
   onOpen: (pane: PaneId) => void;
@@ -614,7 +550,7 @@ function PaneHost({
 }: {
   pane: PaneId;
   active: boolean;
-  registerHost: (pane: PaneId, el: HTMLElement | null) => void;
+  registerHost: Register<PaneId>;
 }) {
   const setRef = useCallback(
     (el: HTMLDivElement | null) => {

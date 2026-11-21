@@ -22,7 +22,9 @@ struct Test { std::string key, name, origin, path; int line; void (*body)(); };
 struct Registrar {
     Registrar(const char* key, const char* name, const char* origin, const char* file, int line, unsigned ordinal, void (*body)());
 };
-int run(const char* nonce, const std::vector<std::string>& selected, bool all);
+// Runs the selected tests (all by default), reporting each event as a JSON line to the
+// `/dev/simpletest` device the IDE attaches (or stdout when it is absent).
+int run(const std::vector<std::string>& selected = {}, bool all = true);
 [[noreturn]] void fail(const std::string& message, const char* file, int line,
     const char* actualExpression = "", const char* expectedExpression = "",
     const std::string& actual = "", const std::string& expected = "");

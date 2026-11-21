@@ -2,9 +2,7 @@ import type { DockState } from "@/components/dock/types";
 
 export type Language = "c" | "python" | "rust";
 
-export type Pane = "editor" | "variables" | "output" | "tests";
-
-export type TestExpression = {
+type TestExpression = {
   /** The expression whose value is `value` */
   expression: string;
   /** The value of expression */

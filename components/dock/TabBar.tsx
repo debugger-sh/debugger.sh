@@ -5,7 +5,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core';
 
 import { PANE_LABELS, type PaneId, type TabGroup } from './types';
 
-export type TabBarProps = {
+type TabBarProps = {
   group: TabGroup;
   closed: PaneId[];
   onSelect: (pane: PaneId) => void;

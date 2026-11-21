@@ -1,13 +1,13 @@
 import type { DebugFrame, DebugVariable } from './types';
 
-export type VariableLike = {
+type VariableLike = {
   name: string;
   value: string;
   type?: string;
   variablesReference: number;
 };
 
-export type ScopeLike = {
+type ScopeLike = {
   name: string;
   variables: VariableLike[];
 };

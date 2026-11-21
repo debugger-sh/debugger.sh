@@ -409,12 +409,10 @@ function onWindowError(ev: ErrorEvent) {
 
 function onRejection(ev: PromiseRejectionEvent) {
   const reason = ev.reason;
-  const type = reason instanceof Error ? reason.name : typeof reason;
-  const text = reason instanceof Error ? String(reason) : String(reason);
-  reportError(type, text);
+  reportError(reason instanceof Error ? reason.name : typeof reason, String(reason));
 }
 
-export type SessionStartInput = {
+type SessionStartInput = {
   language: Language;
   code: string;
   layout: DockState;

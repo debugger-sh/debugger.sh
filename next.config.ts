@@ -1,6 +1,6 @@
 import type { NextConfig } from "next";
 
-// COOP/COEP are required by debugger-sh to use SharedArrayBuffer for stdin.
+// COOP/COEP are required by debugger-sh, whose filesystem and pipes use SharedArrayBuffer.
 //
 // Production (Cloudflare Workers Static Assets): set via `public/_headers`,
 // which is copied into `out/_headers` and read by the Workers asset server.
@@ -11,8 +11,6 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   output: "export",
   images: { unoptimized: true },
-  // Keep the prebundled debugger-sh dist from being re-compiled oddly by Next.
-  transpilePackages: ["debugger-sh"],
   async rewrites() {
     return [{ source: "/:path+", destination: "/" }];
   },

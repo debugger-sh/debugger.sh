@@ -30,8 +30,8 @@ function updateGroup(
   const root = mapNode(state.root, (n) => {
     if (!isTabGroup(n) || n.id !== groupId) return n;
     const next = update(n);
-    // null means "delete this group" — handled by prune after
-    return next ?? { ...n, tabs: [] as PaneId[], active: n.active };
+    // An empty group is pruned below.
+    return next ?? { ...n, tabs: [] };
   });
   return pruneEmpty({ root });
 }
@@ -41,10 +41,10 @@ function detachPane(state: DockState, pane: PaneId): { state: DockState; blocked
   const vis = visiblePanes(state);
   if (vis.size <= 1 && vis.has(pane)) return { state, blocked: true };
 
-  let root = mapNode(state.root, (n) => {
+  const root = mapNode(state.root, (n) => {
     if (!isTabGroup(n) || !n.tabs.includes(pane)) return n;
     const tabs = n.tabs.filter((t) => t !== pane);
-    if (tabs.length === 0) return { ...n, tabs: [] as PaneId[], active: n.active };
+    if (tabs.length === 0) return { ...n, tabs };
     const active = n.active === pane ? tabs[tabs.length - 1]! : n.active;
     return { ...n, tabs, active };
   });
@@ -52,7 +52,7 @@ function detachPane(state: DockState, pane: PaneId): { state: DockState; blocked
 }
 
 /** Collapse empty tab groups by promoting the sibling. */
-export function pruneEmpty(state: DockState): DockState {
+function pruneEmpty(state: DockState): DockState {
   const prune = (node: DockNode): DockNode | null => {
     if (isTabGroup(node)) return node.tabs.length === 0 ? null : node;
     const a = prune(node.children[0]);
@@ -134,27 +134,18 @@ export function moveToGroup(
   if (detached.blocked) return state;
 
   return updateGroup(detached.state, targetGroupId, (g) => {
-    // Target might have been pruned if we somehow detached from it — shouldn't happen.
     const i = index == null ? g.tabs.length : Math.max(0, Math.min(index, g.tabs.length));
     const tabs = [...g.tabs.slice(0, i), pane, ...g.tabs.slice(i)];
     return { ...g, tabs, active: pane };
   });
 }
 
-function edgeToDir(edge: DropEdge): { dir: SplitDir; first: boolean } | null {
-  switch (edge) {
-    case 'left':
-      return { dir: 'h', first: true };
-    case 'right':
-      return { dir: 'h', first: false };
-    case 'top':
-      return { dir: 'v', first: true };
-    case 'bottom':
-      return { dir: 'v', first: false };
-    default:
-      return null;
-  }
-}
+const EDGE_SPLITS: Record<Exclude<DropEdge, 'center'>, { dir: SplitDir; first: boolean }> = {
+  left: { dir: 'h', first: true },
+  right: { dir: 'h', first: false },
+  top: { dir: 'v', first: true },
+  bottom: { dir: 'v', first: false },
+};
 
 /** Split a leaf group, placing `pane` in the new sibling. */
 export function splitLeaf(
@@ -164,30 +155,17 @@ export function splitLeaf(
   edge: DropEdge,
 ): DockState {
   if (edge === 'center') return moveToGroup(state, pane, targetGroupId);
-
-  const splitInfo = edgeToDir(edge);
-  if (!splitInfo) return state;
+  const splitInfo = EDGE_SPLITS[edge];
 
   const target = collectGroups(state.root).find((g) => g.id === targetGroupId);
   if (!target) return state;
 
-  // Dropping onto own sole-tab group is a no-op.
+  // Splitting a group around its only tab is a no-op. Otherwise the target keeps
+  // at least one tab, so it survives the detach.
   if (target.tabs.length === 1 && target.tabs[0] === pane) return state;
 
   const detached = detachPane(state, pane);
   if (detached.blocked) return state;
-
-  // After detach, target may have been pruned if pane was its only tab.
-  // Re-find by id; if gone, the pane was alone there — nothing to split into.
-  const stillThere = collectGroups(detached.state.root).some((g) => g.id === targetGroupId);
-  if (!stillThere) {
-    // Pane was the only tab in target; re-open as a single group isn't needed —
-    // detach already no-op'd or pruned. Just put pane back where? Treat as no-op
-    // by restoring: open into first remaining group as tab.
-    const groups = collectGroups(detached.state.root);
-    if (groups.length === 0) return state;
-    return openInGroup(detached.state, groups[0]!.id, pane);
-  }
 
   const newGroup: TabGroup = {
     type: 'tabs',
@@ -218,12 +196,10 @@ export function hitEdge(
   rect: DOMRect,
   band = 0.22,
 ): DropEdge {
-  const x = (clientX - rect.left) / rect.width;
-  const y = (clientY - rect.top) / rect.height;
-  const fromLeft = x;
-  const fromRight = 1 - x;
-  const fromTop = y;
-  const fromBottom = 1 - y;
+  const fromLeft = (clientX - rect.left) / rect.width;
+  const fromTop = (clientY - rect.top) / rect.height;
+  const fromRight = 1 - fromLeft;
+  const fromBottom = 1 - fromTop;
   const min = Math.min(fromLeft, fromRight, fromTop, fromBottom);
   if (min > band) return 'center';
   if (min === fromLeft) return 'left';

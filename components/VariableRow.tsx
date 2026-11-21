@@ -11,7 +11,7 @@ import type { DapVariable } from "./dap-types";
 import { toDebugVariable } from "@/lib/telemetry/map";
 import { Telemetry } from "@/lib/telemetry/client";
 
-export type VariableRowProps = {
+type VariableRowProps = {
   variable: DapVariable;
   expand: (variablesReference: number) => DapVariable[];
   depth: number;
@@ -25,8 +25,7 @@ export function VariableRow({ variable, expand, depth }: VariableRowProps) {
   // Once presented, only offer expand if there are logical children (empty → no chevron).
   const expandable =
     children !== null ? children.length > 0 : variable.variablesReference > 0;
-  const displayValue =
-    summary ?? (stanfordName ? stanfordName : variable.value);
+  const displayValue = summary ?? stanfordName ?? variable.value;
   const displayType = stanfordName ?? variable.type;
 
   // Re-present whenever the DAP variable identity changes (new pause / step).

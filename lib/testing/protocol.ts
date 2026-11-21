@@ -1,6 +1,6 @@
 /** Decoder for SimpleTest events: one JSON object per line, read from the `/dev/simpletest` pipe. */
 
-export type TestOrigin = 'student' | 'provided' | 'external';
+type TestOrigin = 'student' | 'provided' | 'external';
 
 export type TestInfo = {
   key: string;
@@ -11,7 +11,7 @@ export type TestInfo = {
   line?: number;
 };
 
-export type TestResultStatus = 'passed' | 'failed' | 'errored' | 'leaked' | 'running';
+type TestResultStatus = 'passed' | 'failed' | 'errored' | 'leaked' | 'running';
 
 export type TestResult = {
   key: string;
@@ -52,12 +52,8 @@ function pair(value: unknown): { expression: string; value: string } | undefined
   return { expression, value: text };
 }
 
-export function createEmptyTestRunState(): TestRunState {
-  return { tests: [], results: new Map(), finished: false };
-}
-
 export function createTestReport() {
-  const state = createEmptyTestRunState();
+  const state: TestRunState = { tests: [], results: new Map(), finished: false };
 
   const apply = (event: RawEvent) => {
     const type = asString(event.type);

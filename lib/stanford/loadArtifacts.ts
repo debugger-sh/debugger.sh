@@ -1,7 +1,6 @@
 /**
  * Mounts the precompiled Stanford CS106B library (headers, `cs106b.a`, PCH and
- * dictionary — see cs106b/scripts/build-precompiled.mjs) into the engine.
- * Isolated from the rest of the IDE — call only from the C/C++ run path.
+ * dictionary; see cs106b/scripts/build-precompiled.mjs) into the engine.
  */
 
 import type { CppOptions, Engine } from 'debugger-sh';

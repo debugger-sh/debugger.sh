@@ -6,7 +6,7 @@ import type { DapVariable, ScopeView, StackFrame } from './dap-types';
 import { DebugControls, type DebugControlsProps } from './SourceActions';
 import { VariableRow } from './VariableRow';
 
-export type VariablesPanelProps = {
+type VariablesPanelProps = {
   frames: StackFrame[];
   selectedFrameId: number | null;
   onSelectFrame: (id: number) => void;

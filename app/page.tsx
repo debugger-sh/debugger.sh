@@ -5,12 +5,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import CodeEditor from '@/components/CodeEditor';
 import { LANGS, type Lang } from '@/components/constants';
 import { LanguageSelect } from '@/components/LanguageSelect';
-import ResizableWorkspace from '@/components/ResizableWorkspace';
 import { ShareButton } from '@/components/ShareButton';
 import { RunStopButton } from '@/components/SourceActions';
 import Terminal, { type TerminalHandle } from '@/components/Terminal';
 import { TestsPanel } from '@/components/TestsPanel';
 import { VariablesPanel } from '@/components/VariablesPanel';
+import DockWorkspace from '@/components/dock/DockWorkspace';
 import {
   adoptDockIds,
   defaultDockState,
@@ -44,7 +44,7 @@ export default function Page() {
   const terminalRef = useRef<TerminalHandle | null>(null);
   // Stable element identity so the xterm instance is not remounted on each IDE render.
   const terminal = useMemo(() => <Terminal ref={terminalRef} />, []);
-  const exec = useExecution({ terminalRef });
+  const exec = useExecution(terminalRef);
 
   const code = sources[lang];
   const breakpoints = breakpointsByLang[lang];
@@ -73,7 +73,6 @@ export default function Page() {
 
   const toggleBreakpoint = useCallback(
     (line: number) => {
-      if (!LANGS[lang].debug) return;
       const current = breakpointsRef.current;
       const added = !current.has(line);
       const next = new Set(current);
@@ -169,7 +168,7 @@ export default function Page() {
           <ShareButton getState={getShareState} />
         </div>
       </div>
-      <ResizableWorkspace
+      <DockWorkspace
         key={dockKey}
         layout={layout}
         onLayoutChange={onLayoutChange}

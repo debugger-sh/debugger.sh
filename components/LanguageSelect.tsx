@@ -4,7 +4,7 @@ import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { LANGS, type Lang } from '@/components/constants';
 
-export type LanguageSelectProps = {
+type LanguageSelectProps = {
   value: Lang;
   onChange: (lang: Lang) => void;
   disabled?: boolean;

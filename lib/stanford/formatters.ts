@@ -1,9 +1,4 @@
-/**
- * Isolated Stanford collection pretty-printers for the Variables panel.
- * Works against raw DAP variables (no web-ide plugin system).
- *
- * Keep this file self-contained — do not import IDE UI or execution hooks.
- */
+/** Pretty-printers for Stanford collections in the Variables panel, over raw DAP variables. */
 
 import type { DapVariable } from '@/components/dap-types';
 
@@ -70,14 +65,10 @@ function field(children: DapVariable[], name: string): DapVariable | undefined {
   return children.find((child) => child.name === name);
 }
 
-function summaryFor(adt: ADT, backingCount: number | undefined, shape?: { rows: number; columns: number }): string {
+function summaryFor(adt: ADT, count: number | undefined, shape?: { rows: number; columns: number }): string {
   if (shape) return `Grid (${shape.rows}×${shape.columns})`;
-  const count = backingCount ?? '?';
-  if (adt === 'Stack') return `Stack (${count})`;
-  if (adt === 'Queue' || adt === 'Deque') return `${adt} (${count})`;
-  if (adt === 'PriorityQueue') return `PriorityQueue (${count})`;
-  if (backingCount !== undefined) return `${adt} (${backingCount})`;
-  return adt;
+  if (count !== undefined) return `${adt} (${count})`;
+  return ['Stack', 'Queue', 'Deque', 'PriorityQueue'].includes(adt) ? `${adt} (?)` : adt;
 }
 
 function parseCount(value: string | undefined): number | undefined {
@@ -88,7 +79,7 @@ function parseCount(value: string | undefined): number | undefined {
   return Number.isSafeInteger(n) && n >= 0 ? n : undefined;
 }
 
-export type StanfordPresentation = {
+type StanfordPresentation = {
   summary: string;
   /** Logical children to show instead of raw struct members. */
   children: DapVariable[];
@@ -206,8 +197,7 @@ export function presentStanfordVariable(
     // (type may be `Vector<T>::ContainerType` rather than `std::vector<T>`).
     const elements = expand(sequence.variablesReference);
     const total = elements.length;
-    const children = elements.map((element, offset) => {
-      const index = offset;
+    const children = elements.map((element, index) => {
       let name =
         shape && shape.columns > 0
           ? `[${Math.floor(index / shape.columns)}, ${index % shape.columns}]`

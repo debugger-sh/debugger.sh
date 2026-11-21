@@ -21,9 +21,8 @@ import {
 } from '@codemirror/search';
 import { tags as t } from '@lezer/highlight';
 
-import { LANGS, type Lang } from '@/components/constants';
+import type { Lang } from '@/components/constants';
 import { telemetryEditor } from '@/lib/telemetry/editor';
-
 
 // ---------------------------------------------------------------------------
 // Language extensions
@@ -39,10 +38,8 @@ const LANG_EXTENSIONS: Record<Lang, () => Extension> = {
 // Theme
 // ---------------------------------------------------------------------------
 //
-// Every color and dimension that affects the editor's look lives here so
-// tweaking the palette is a one-stop edit. We deliberately use `theme="none"`
-// on the CodeMirror component below so nothing else colors the editor — this
-// object is the single source of truth.
+// Every color and dimension of the editor lives here. The CodeMirror component
+// uses `theme="none"`, so nothing else colors the editor.
 
 const theme = {
   bg: '#0d0d0d',
@@ -67,7 +64,7 @@ const theme = {
     family:
       'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace',
     size: '13px',
-    // 1.54 ≈ 20px on a 13px font — matches the original textarea exactly.
+    // ≈ 20px on a 13px font.
     lineHeight: '1.54',
   },
   // Tailwind 400-series — saturated enough to pop on a near-black background
@@ -105,8 +102,6 @@ const editorChrome = EditorView.theme(
       fontFamily: theme.font.family,
       lineHeight: theme.font.lineHeight,
     },
-    // Strip CM defaults so vertical/horizontal rhythm matches the original
-    // textarea (which had `padding: 0 12px`).
     '.cm-content': { caretColor: theme.caret, padding: '0' },
     '.cm-line': { padding: '0 12px' },
     '.cm-cursor, .cm-dropCursor': { borderLeftColor: theme.caret },
@@ -230,11 +225,9 @@ const codeSyntax = HighlightStyle.define([
 // Breakpoints
 // ---------------------------------------------------------------------------
 //
-// React owns the canonical Set<number>. We mirror it into `breakpointsField`
-// via a dispatched `setBreakpointsEffect`; gutter clicks call back through the
-// `toggleRef` so React stays the single source of truth. Stored as Set<number>
-// (not RangeSet) because we don't track breakpoints across edits — matches the
-// prior textarea behavior.
+// React owns the breakpoints and mirrors them into `breakpointsField`; gutter
+// clicks call back through `toggleRef`. They are line numbers rather than a
+// RangeSet because breakpoints do not move with edits.
 
 const setBreakpointsEffect = StateEffect.define<number[]>();
 
@@ -246,8 +239,7 @@ const breakpointsField = StateField.define<ReadonlySet<number>>({
   },
 });
 
-// One combined gutter row: hole/dot on the left, line number on the right
-// (matches the original textarea-era Gutter component layout).
+// One combined gutter row: breakpoint dot on the left, line number on the right.
 class LineGutterMarker extends GutterMarker {
   constructor(
     readonly lineNumber: number,
@@ -295,16 +287,12 @@ class LineGutterMarker extends GutterMarker {
 
 // `toggleRef` is a ref so the click handler always sees the freshest callback
 // without having to rebuild the gutter extension on every parent render.
-function makeLineGutter(
-  toggleRef: { current: (line: number) => void },
-  breakpointsEnabled: boolean,
-) {
+function makeLineGutter(toggleRef: { current: (line: number) => void }) {
   return gutter({
     class: 'cm-line-gutter',
     lineMarker: (view, line) => {
       const lineNumber = view.state.doc.lineAt(line.from).number;
-      const hasBreakpoint =
-        breakpointsEnabled && view.state.field(breakpointsField).has(lineNumber);
+      const hasBreakpoint = view.state.field(breakpointsField).has(lineNumber);
       const stop = view.state.field(stoppedLineField);
       const stopped = stop.line === lineNumber;
       return new LineGutterMarker(lineNumber, hasBreakpoint, stopped, stopped && stop.flash > 0);
@@ -318,14 +306,12 @@ function makeLineGutter(
     },
     // Spacer sized for up to 4-digit line numbers; gutter grows past this if needed.
     initialSpacer: () => new LineGutterMarker(9999, false),
-    domEventHandlers: breakpointsEnabled
-      ? {
-          mousedown(view, line) {
-            toggleRef.current(view.state.doc.lineAt(line.from).number);
-            return true;
-          },
-        }
-      : {},
+    domEventHandlers: {
+      mousedown(view, line) {
+        toggleRef.current(view.state.doc.lineAt(line.from).number);
+        return true;
+      },
+    },
   });
 }
 
@@ -357,10 +343,6 @@ const stoppedLineHighlight = EditorView.decorations.compute([stoppedLineField], 
     Decoration.line({ attributes: { class: cls } }).range(state.doc.line(line).from),
   ]);
 });
-
-function stopHighlight(line: number | null, flash = 0): StopHighlight {
-  return { line, flash };
-}
 
 /**
  * Center `line` in the editor. Resolves immediately when the line is already
@@ -537,7 +519,7 @@ const findOverlay: Extension = search({ top: true, createPanel: createFindPanel 
 // Component
 // ---------------------------------------------------------------------------
 
-export type CodeEditorProps = {
+type CodeEditorProps = {
   lang: Lang;
   value: string;
   onChange: (value: string) => void;
@@ -555,7 +537,6 @@ export type CodeEditorProps = {
 
 export default function CodeEditor(props: CodeEditorProps) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
-  const breakpointsEnabled = LANGS[props.lang].debug;
 
   const toggleRef = useRef(props.onToggleBreakpoint);
   toggleRef.current = props.onToggleBreakpoint;
@@ -566,13 +547,13 @@ export default function CodeEditor(props: CodeEditorProps) {
       breakpointsField,
       stoppedLineField,
       stoppedLineHighlight,
-      makeLineGutter(toggleRef, breakpointsEnabled),
+      makeLineGutter(toggleRef),
       telemetryEditor(),
       syntaxHighlighting(codeSyntax),
       findOverlay,
       editorChrome,
     ],
-    [props.lang, breakpointsEnabled],
+    [props.lang],
   );
 
   // App-wide find: while this editor pane is visible, ⌘/Ctrl+F always toggles
@@ -611,7 +592,7 @@ export default function CodeEditor(props: CodeEditorProps) {
     view.dispatch({
       effects: [
         setBreakpointsEffect.of(breakpoints),
-        setStoppedLineEffect.of(stopHighlight(stoppedLine, flash)),
+        setStoppedLineEffect.of({ line: stoppedLine, flash }),
       ],
     });
   }, [props.lang, props.value, props.breakpoints, props.stoppedLine]);
@@ -632,12 +613,12 @@ export default function CodeEditor(props: CodeEditorProps) {
       if (!current) return;
       if (line < 1 || line > current.state.doc.lines) return;
       // Drop the class for a frame so the animation restarts.
-      current.dispatch({ effects: setStoppedLineEffect.of(stopHighlight(line, 0)) });
+      current.dispatch({ effects: setStoppedLineEffect.of({ line, flash: 0 }) });
       flashFrame = requestAnimationFrame(() => {
         if (cancelled) return;
         const view = cmRef.current?.view;
         if (!view || line < 1 || line > view.state.doc.lines) return;
-        view.dispatch({ effects: setStoppedLineEffect.of(stopHighlight(line, flash)) });
+        view.dispatch({ effects: setStoppedLineEffect.of({ line, flash }) });
       });
     };
 

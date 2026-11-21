@@ -10,7 +10,6 @@
     "prebuild": "npm run build:cs106b",
     "build": "next build",
     "build:cs106b": "node cs106b/scripts/build-precompiled.mjs",
-    "test:smoke": "node scripts/smoke-prepare.mjs && node --experimental-strip-types scripts/smoke-engine.mjs",
     "start": "next start",
     "supabase:start": "supabase start",
     "supabase:stop": "supabase stop",
@@ -44,7 +43,6 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
-    "playwright": "^1.64.1",
     "supabase": "^2.122.0",
     "typescript": "^5.9.3"
   }

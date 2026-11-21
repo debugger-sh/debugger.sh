@@ -14,39 +14,28 @@ import { mountStanfordArtifacts, stanfordCppOptions } from '@/lib/stanford/loadA
 import { prepareCppRun } from '@/lib/testing/prepare';
 import { createTestReport, type TestRunState } from '@/lib/testing/protocol';
 
-/** SimpleTest runner / registry frames — hide from the call stack while debugging tests. */
+/** SimpleTest runner frames, hidden from the call stack while debugging tests. */
 function isSimpleTestHarnessFrame(frame: StackFrame): boolean {
-  const path = frame.source?.path ?? '';
-  if (/SimpleTest(?:_runner)?\.(?:cpp|c|h)$/i.test(path)) return true;
-  if (/simpletest::/i.test(frame.name)) return true;
-  return false;
+  return /SimpleTest(?:_runner)?\.(?:cpp|c|h)$/i.test(frame.source?.path ?? '') || /simpletest::/i.test(frame.name);
 }
 
-/** Normalize DAP / DWARF source paths for comparison with LANGS[*].sourcePath. */
-function normalizeSourcePath(path: string | undefined | null): string {
+/** Normalizes a debugger source path for comparison with `LANGS[lang].sourcePath`. */
+function normalizeSourcePath(path: string | undefined): string {
   if (!path) return '';
-  let p = path.startsWith('file://') ? path.slice('file://'.length) : path;
-  p = p.replace(/\\/g, '/');
-  if (!p.startsWith('/')) p = `/${p}`;
-  return p;
+  const p = path.replace(/^file:\/\//, '').replace(/\\/g, '/');
+  return p.startsWith('/') ? p : `/${p}`;
 }
 
-/** True when the frame is the single editable main file (never library / harness). */
-function isMainSource(
-  path: string | undefined | null,
-  mainPath: string
-): boolean {
-  return normalizeSourcePath(path) === normalizeSourcePath(mainPath);
+/** Whether `frame` is in the file being edited (rather than a library or the test harness). */
+function inMainSource(frame: StackFrame, lang: Lang): boolean {
+  return normalizeSourcePath(frame.source?.path) === LANGS[lang].sourcePath;
 }
 
 type StopReason = 'breakpoint' | 'step' | 'exception' | 'pause';
 
 function mapStopReason(reason: string): StopReason {
-  if (reason === 'step') return 'step';
-  if (reason === 'exception') return 'exception';
-  if (reason === 'pause') return 'pause';
-  if (reason.includes('breakpoint')) return 'breakpoint';
-  return 'pause';
+  if (reason === 'step' || reason === 'exception') return reason;
+  return reason.includes('breakpoint') ? 'breakpoint' : 'pause';
 }
 
 /** A copy of the test state that React sees as new. */
@@ -81,6 +70,7 @@ function testsFrom(state: TestRunState): TestCase[] {
 /**
  * Writes `code` into the engine and starts it. C++ programs are built against the
  * Stanford library; programs with SimpleTest cases report results on `tests`.
+ * Toolchain `sources` are globs relative to the root, so they use the bare file name.
  */
 async function start(
   engine: Engine,
@@ -88,7 +78,6 @@ async function start(
   code: string,
   debug: boolean
 ): Promise<{ proc: Process; tests?: Pipe }> {
-  // `sources` are globs relative to the root, so they use the bare file name.
   const { fsKey, sourcePath } = LANGS[lang];
   if (lang === 'python') {
     await engine.fs.writeFile(sourcePath, code);
@@ -112,11 +101,7 @@ async function start(
   return { proc, tests };
 }
 
-export type UseExecutionOptions = {
-  terminalRef: React.RefObject<TerminalHandle | null>;
-};
-
-export type ExecutionApi = {
+type ExecutionApi = {
   isRunning: boolean;
   isPaused: boolean;
   stoppedLine: number | null;
@@ -140,17 +125,15 @@ export type ExecutionApi = {
   stepIn: () => void;
   stepOut: () => void;
   selectFrame: (id: number) => void;
-  /** Sync DAP `variables` request — returns child variables or [] on failure. */
+  /** Returns the children of a variable, or [] on failure. */
   expandVariable: (ref: number) => DapVariable[];
-  /** Push a new breakpoint set to the running runtime (no-op if not running). */
+  /** Sends a new breakpoint set to the running program, if any. */
   applyBreakpoints: (breakpoints: ReadonlySet<number>) => void;
 };
 
 const ignore = () => undefined;
 
-export function useExecution({
-  terminalRef,
-}: UseExecutionOptions): ExecutionApi {
+export function useExecution(terminalRef: React.RefObject<TerminalHandle | null>): ExecutionApi {
   const [isRunning, setIsRunning] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [stoppedLine, setStoppedLine] = useState<number | null>(null);
@@ -162,7 +145,6 @@ export function useExecution({
   const [debugLoading, setDebugLoading] = useState(false);
   const [testState, setTestState] = useState<TestRunState | null>(null);
 
-  /** The running process, or null between runs. */
   const procRef = useRef<Process | null>(null);
   const isRunningRef = useRef(false);
   const stdinDisposeRef = useRef<(() => void) | null>(null);
@@ -172,10 +154,10 @@ export function useExecution({
   const stdoutBufferRef = useRef('');
   const stopReasonRef = useRef<StopReason>('pause');
   const autoSkipStopRef = useRef(false);
-  /** Caps just-my-code `next` skips if we somehow never re-enter the main file. */
+  /** Caps just-my-code skips in case the program never re-enters the main file. */
   const librarySkipRef = useRef(0);
 
-  // Warm the C++ toolchain + Stanford library as soon as the IDE mounts.
+  // Load the C++ toolchain and Stanford library as soon as the IDE mounts.
   useEffect(() => {
     void getEngine()
       .then((engine) => Promise.all([warmCppToolchain(), mountStanfordArtifacts(engine)]))
@@ -227,16 +209,11 @@ export function useExecution({
       try {
         const raw = stop.frames();
 
-        // Just-my-code: never surface a pause whose PC is outside the main file
-        // (Stanford headers, libc++, SimpleTest harness, etc.).
-        //
-        // Use `next` (step over), not `stepOut`. Headers like vector.h are
-        // compiled into the student TU, so Step Into on
-        // `EXPECT_EQUAL(list.printContact(v[i]), …)` lands in Vector::operator[]
-        // first. `stepOut` from there returns past the rest of the statement and
-        // skips user callees such as printContact; `next` finishes the library
-        // call and then enters the next step-in target in user code.
-        if (raw.length > 0 && !isMainSource(raw[0].source?.path, LANGS[langRef.current].sourcePath)) {
+        // Just my code: never show a stop outside the main file (Stanford headers, libc++,
+        // the test harness). Step over rather than out: Step Into on
+        // `EXPECT_EQUAL(f(v[i]), …)` lands in `Vector::operator[]` first, and stepping out
+        // of it would skip the rest of the statement, including the call to `f`.
+        if (raw.length > 0 && !inMainSource(raw[0], langRef.current)) {
           // Keep the original stop reason across the automatic skip.
           autoSkipStopRef.current = true;
           if (librarySkipRef.current++ >= 64) {
@@ -291,14 +268,11 @@ export function useExecution({
 
   const wireStdout = useCallback(
     (proc: Process) => {
-      // Reading terminalRef at write-time avoids a stale xterm handle if React
-      // remounts the terminal while the run is in flight.
       const write = (kind: 'stdout' | 'stderr') => (text: string) => {
         if (procRef.current !== proc) return;
         Telemetry.log('run_io', { kind, data: text });
         const output = text.replace(/\r?\n/g, '\r\n');
-        // Keep a durable copy — xterm can remount when the Tests panel
-        // updates, which would otherwise drop live writes.
+        // Keep a copy to redraw the terminal with when the run ends.
         stdoutBufferRef.current += output;
         terminalRef.current?.write(output);
       };
@@ -380,8 +354,6 @@ export function useExecution({
       const started = performance.now();
       langRef.current = lang;
       breakpointsRef.current = breakpoints;
-      // Only instrument for debugging when there is somewhere to stop.
-      const wantsDebug = LANGS[lang].debug && breakpoints.size > 0;
       teardown();
       clearDebug();
       setTestState(null);
@@ -400,7 +372,8 @@ export function useExecution({
           );
         }
 
-        const { proc, tests } = await start(await getEngine(), lang, code, wantsDebug);
+        // Only debug when there is somewhere to stop.
+        const { proc, tests } = await start(await getEngine(), lang, code, breakpoints.size > 0);
         procRef.current = proc;
         wireStdout(proc);
         wireStdin(proc);
@@ -504,14 +477,11 @@ export function useExecution({
     (id: number) => {
       setSelectedFrameId(id);
       const index = frames.findIndex((frame) => frame.id === id);
-      const frame = index >= 0 ? frames[index] : undefined;
+      const frame = frames[index];
       if (!frame) return;
       const views = loadFrame(frame);
       Telemetry.log('debug_frame', { frame: toDebugFrame(index, frame.name, views) });
-      const inDocument =
-        frame.line >= 1 &&
-        isMainSource(frame.source?.path, LANGS[langRef.current].sourcePath);
-      if (inDocument) {
+      if (frame.line >= 1 && inMainSource(frame, langRef.current)) {
         setStoppedLine(frame.line);
         setRevealFlash(false);
         setRevealSeq((n) => n + 1);

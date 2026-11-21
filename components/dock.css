@@ -420,16 +420,6 @@
   background: rgba(255, 255, 255, 0.18);
 }
 
-.ide-action-btn--danger,
-.ide-action-btn--danger:hover {
-  background: rgba(239, 68, 68, 0.16);
-  color: #fca5a5;
-}
-.ide-action-btn--danger:hover {
-  background: rgba(239, 68, 68, 0.28);
-  color: #fff;
-}
-
 /* Page header controls: language + run/stop + share */
 .ide-main-dock {
   --ide-control-h: 22px;

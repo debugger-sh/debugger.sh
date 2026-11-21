@@ -148,8 +148,7 @@ const editorChrome = EditorView.theme(
       border: `1px solid ${theme.find.border}`,
       borderRadius: '4px',
       boxShadow: '0 8px 24px rgba(0, 0, 0, 0.5)',
-      fontFamily:
-        'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      fontFamily: theme.font.family,
       fontSize: '12px',
       color: theme.fg,
     },

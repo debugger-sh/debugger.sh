@@ -290,18 +290,23 @@ export function useExecution(terminalRef: React.RefObject<TerminalHandle | null>
         if (!proc.stdin.closed) proc.stdin.write(text).catch(ignore);
       };
       let buffer = '';
+      /** Ends the line being typed, keeping it in the copy the terminal is redrawn from. */
+      const endLine = (suffix: string) => {
+        term.write(`${suffix}\r\n`);
+        stdoutBufferRef.current += `${buffer}${suffix}\r\n`;
+        buffer = '';
+      };
       stdinDisposeRef.current = term.onData((data) => {
         if (!isRunningRef.current) return;
         Telemetry.log('run_io', { kind: 'stdin', data });
         if (data === '\x03') {
-          term.write('^C\r\n');
+          endLine('^C');
           proc.kill();
           return;
         }
         if (data === '\x04') {
-          term.write('^D\r\n');
+          endLine('^D');
           proc.stdin.close();
-          buffer = '';
           return;
         }
         if (data === '\x0c') {
@@ -310,9 +315,8 @@ export function useExecution(terminalRef: React.RefObject<TerminalHandle | null>
           return;
         }
         if (data === '\r') {
-          term.write('\r\n');
           send(`${buffer}\n`);
-          buffer = '';
+          endLine('');
           return;
         }
         if (data === '\u007f') {
